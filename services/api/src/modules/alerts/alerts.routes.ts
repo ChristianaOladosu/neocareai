@@ -1,0 +1,93 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import type pg from 'pg';
+import { pool, tx } from '../../database/db.js';
+import { asyncHandler, HttpError } from '../../utils/errors.js';
+import { requireAuth, requirePermission, type AuthUser } from '../../middleware/auth.js';
+import { audit } from '../audit/audit.service.js';
+import { publish } from '../../events/bus.js';
+
+export const alertsRouter = Router();
+alertsRouter.use(requireAuth);
+const uuid = z.string().uuid();
+
+alertsRouter.get('/', requirePermission('alert:read'), asyncHandler(async (req, res) => {
+  const q = z.object({ status: z.string().optional(), newbornId: uuid.optional(), limit: z.coerce.number().int().min(1).max(500).default(100) }).parse(req.query);
+  const statuses = q.status ? q.status.split(',') : null;
+  const r = await pool.query(
+    `SELECT a.id, a.newborn_id, n.newborn_identifier, a.priority, a.title, a.explanation, a.status, a.created_at, a.updated_at, a.evidence
+     FROM clinical_alerts a JOIN newborns n ON n.id=a.newborn_id
+     WHERE a.hospital_id=$1 AND ($2::text[] IS NULL OR a.status = ANY($2)) AND ($3::uuid IS NULL OR a.newborn_id=$3)
+     ORDER BY a.created_at DESC LIMIT $4`, [req.user!.hospitalId, statuses, q.newbornId ?? null, q.limit]);
+  res.json(r.rows);
+}));
+
+// Opening an alert is read-only: it never changes status.
+alertsRouter.get('/:id', requirePermission('alert:read'), asyncHandler(async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const a = await pool.query(
+    `SELECT a.*, n.newborn_identifier, r.rule_version, r.name AS rule_name FROM clinical_alerts a JOIN newborns n ON n.id=a.newborn_id
+     LEFT JOIN alert_rules r ON r.id=a.rule_id WHERE a.id=$1 AND a.hospital_id=$2`, [id, req.user!.hospitalId]);
+  if (!a.rows[0]) throw new HttpError(404, 'Alert not found', 'not_found');
+  const [events, assessments] = await Promise.all([
+    pool.query(`SELECT e.id, e.event_type, e.previous_status, e.new_status, e.event_details, e.created_at, u.full_name AS user_name
+                FROM response_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.alert_id=$1 ORDER BY e.created_at, e.id`, [id]),
+    pool.query(`SELECT s.id, s.assessment_text, s.created_at, u.full_name AS clinician FROM clinical_assessments s JOIN users u ON u.id=s.clinician_id WHERE s.alert_id=$1 ORDER BY s.created_at`, [id]),
+  ]);
+  res.json({ ...a.rows[0], events: events.rows, assessments: assessments.rows });
+}));
+
+type Status = 'awaiting_acknowledgement' | 'acknowledged' | 'under_assessment' | 'escalated' | 'resolved';
+
+async function transition(user: AuthUser, alertId: string, from: Status[], to: Status, eventType: string, details: Record<string, unknown>, extra?: (c: pg.PoolClient) => Promise<void>) {
+  return tx(async (c) => {
+    const cur = await c.query('SELECT status FROM clinical_alerts WHERE id=$1 AND hospital_id=$2 FOR UPDATE', [alertId, user.hospitalId]);
+    if (!cur.rows[0]) throw new HttpError(404, 'Alert not found', 'not_found');
+    const prev = cur.rows[0].status as Status;
+    if (!from.includes(prev)) throw new HttpError(409, `Cannot ${eventType.replace('_', ' ')} an alert that is ${prev.replace(/_/g, ' ')}`, 'invalid_transition');
+    if (extra) await extra(c);
+    await c.query('UPDATE clinical_alerts SET status=$2, updated_at=now() WHERE id=$1', [alertId, to]);
+    await c.query('INSERT INTO response_events(alert_id,user_id,event_type,previous_status,new_status,event_details) VALUES ($1,$2,$3,$4,$5,$6)', [alertId, user.id, eventType, prev, to, JSON.stringify(details)]);
+    await audit({ hospitalId: user.hospitalId, userId: user.id, action: `alert.${eventType}`, resourceType: 'alert', resourceId: alertId, metadata: { from: prev, to } }, c);
+    publish({ type: 'alert.updated', hospitalId: user.hospitalId, payload: { alertId, status: to } });
+    return { id: alertId, previousStatus: prev, status: to };
+  });
+}
+
+alertsRouter.post('/:id/acknowledge', requirePermission('alert:acknowledge'), asyncHandler(async (req, res) => {
+  res.json(await transition(req.user!, uuid.parse(req.params.id), ['awaiting_acknowledgement'], 'acknowledged', 'acknowledged', {}));
+}));
+
+const assessSchema = z.object({ assessmentText: z.string().trim().min(3).max(4000), responseText: z.string().trim().min(3).max(4000).optional() });
+alertsRouter.post('/:id/assessment', requirePermission('alert:assess'), asyncHandler(async (req, res) => {
+  const b = assessSchema.parse(req.body); const id = uuid.parse(req.params.id); const u = req.user!;
+  res.json(await transition(u, id, ['acknowledged', 'under_assessment'], 'under_assessment', 'assessment_recorded', { assessmentLength: b.assessmentText.length }, async (c) => {
+    await c.query('INSERT INTO clinical_assessments(alert_id,clinician_id,assessment_text) VALUES ($1,$2,$3)', [id, u.id, b.assessmentText]);
+    if (b.responseText)
+      await c.query(`INSERT INTO response_events(alert_id,user_id,event_type,previous_status,new_status,event_details) VALUES ($1,$2,'response_documented','under_assessment','under_assessment',$3)`, [id, u.id, JSON.stringify({ responseText: b.responseText })]);
+  }));
+}));
+
+const reasonSchema = z.object({ reason: z.string().trim().min(3).max(2000) });
+alertsRouter.post('/:id/escalate', requirePermission('alert:escalate'), asyncHandler(async (req, res) => {
+  const b = reasonSchema.parse(req.body);
+  res.json(await transition(req.user!, uuid.parse(req.params.id), ['acknowledged', 'under_assessment'], 'escalated', 'escalated', { reason: b.reason }));
+}));
+
+alertsRouter.post('/:id/resolve', requirePermission('alert:resolve'), asyncHandler(async (req, res) => {
+  const b = z.object({ resolutionNote: z.string().trim().min(3).max(2000) }).parse(req.body); const id = uuid.parse(req.params.id);
+  res.json(await transition(req.user!, id, ['under_assessment', 'escalated'], 'resolved', 'resolved', { resolutionNote: b.resolutionNote }, async (c) => {
+    const n = await c.query('SELECT 1 FROM clinical_assessments WHERE alert_id=$1 LIMIT 1', [id]);
+    if (!n.rowCount) throw new HttpError(409, 'A clinical assessment must be recorded before resolution', 'assessment_required');
+  }));
+}));
+
+export const responseLogRouter = Router();
+responseLogRouter.get('/', requireAuth, requirePermission('response:read'), asyncHandler(async (req, res) => {
+  const limit = z.coerce.number().int().min(1).max(500).default(100).parse(req.query.limit);
+  const r = await pool.query(
+    `SELECT e.id, e.alert_id, e.event_type, e.previous_status, e.new_status, e.event_details, e.created_at, u.full_name AS user_name, n.newborn_identifier, a.title AS alert_title
+     FROM response_events e JOIN clinical_alerts a ON a.id=e.alert_id JOIN newborns n ON n.id=a.newborn_id LEFT JOIN users u ON u.id=e.user_id
+     WHERE a.hospital_id=$1 ORDER BY e.created_at DESC, e.id LIMIT $2`, [req.user!.hospitalId, limit]);
+  res.json(r.rows);
+}));
