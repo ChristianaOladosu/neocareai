@@ -59,6 +59,9 @@ function gatewayAuth(req: any, _res: any, next: any) {
   next(ok ? undefined : new HttpError(401, 'Invalid gateway key', 'unauthenticated'));
 }
 gatewayRouter.use(gatewayAuth);
+gatewayRouter.get('/hospitals', asyncHandler(async (_req, res) => {
+  res.json((await pool.query(`SELECT id, name FROM hospitals WHERE status='active' ORDER BY name`)).rows);
+}));
 
 const gwObs = observationSchema.extend({ hospitalId: uuid, deviceIdentifier: z.string().min(1).max(60), newbornIdentifier: z.string().min(1).max(40).optional() });
 gatewayRouter.post('/observations', asyncHandler(async (req, res) => {

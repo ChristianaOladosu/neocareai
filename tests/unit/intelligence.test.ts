@@ -29,4 +29,11 @@ describe('trends and rules', () => {
     expect(keys).not.toContain('demo-falling-spo2');
     expect(keys).toContain('demo-unreliable-data');
   });
+  it('regression: healthy readings from other sensors cannot mask a failing sensor', () => {
+    const r = empty();
+    r.spo2 = [rd('s1', 'spo2', 62, 4, 'poor'), rd('s2', 'spo2', 60, 2, 'poor'), rd('s3', 'spo2', 64, 0, 'poor')];
+    r.heart_rate = [rd('h1', 'heart_rate', 140, 4), rd('h2', 'heart_rate', 141, 2), rd('h3', 'heart_rate', 139, 0)];
+    r.temperature = [rd('t1', 'temperature', 36.8, 0)];
+    expect(evaluateRules(DEFAULT_RULES, r).map((x) => x.ruleKey)).toContain('demo-unreliable-data');
+  });
 });

@@ -56,9 +56,13 @@ export function evaluateRules(rules: RuleConfig[], readings: Record<MeasurementT
         if (!pass) { ok = false; break; }
         triggering.push(...tail);
       } else {
-        const all = Object.values(readings).flat().sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime());
-        const tail = all.slice(-c.count);
-        if (!(tail.length === c.count && tail.every((r) => c.quality.includes(r.quality)))) { ok = false; break; }
+        // Per measurement type: any single measurement with N consecutive unreliable readings counts,
+        // so healthy readings from other sensors cannot mask a failing one.
+        const failing = (Object.keys(readings) as MeasurementType[])
+          .map((m) => (readings[m] ?? []).slice(-c.count))
+          .find((tail) => tail.length === c.count && tail.every((r) => c.quality.includes(r.quality)));
+        if (!failing) { ok = false; break; }
+        const tail = failing;
         triggering.push(...tail);
       }
     }
