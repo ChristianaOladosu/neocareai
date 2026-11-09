@@ -21,3 +21,7 @@ export interface Device { id: string; device_identifier: string; manufacturer: s
 export interface TeamUser { id: string; full_name: string; email: string; account_status: string; created_at: string; roles: string[] }
 export interface RoleInfo { name: string; permissions: string[] }
 export interface Rule { id: string; rule_key: string; name: string; description: string; rule_version: number; enabled: boolean; configuration: { priority: Priority; explanationTemplate: string; conditions: unknown[]; requiredMeasurements: string[]; requiredQuality: Quality[] } }
+export interface AiStatus { enabled: boolean; mode: 'demo' | 'azure'; label: string; provider: string; azureRequested: boolean; azureConfigured: boolean; capabilities: string[]; cannot: string[]; tools: Array<{ name: string; needs: string }> }
+export interface AiResult { interactionId: string; kind: 'summary' | 'draft_assessment'; mode: 'demo' | 'azure'; label: string; status: 'completed' | 'blocked' | 'fallback'; notice: string;
+  output: { title: string; sections: Array<{ heading: string; text: string }>; draftText?: string; sources: Array<{ id: string; title: string; kind: string }>; limitations: string[] } }
+export interface AiInteraction { id: string; kind: string; provider: string; mode: string; status: string; tool_calls: Array<{ tool: string; allowed: boolean }>; safeguard_flags: string[]; created_at: string; alert_id: string | null; user_name: string; newborn_identifier: string | null }

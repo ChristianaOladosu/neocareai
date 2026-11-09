@@ -11,6 +11,7 @@ import { observationsRouter, monitoringRouter, gatewayRouter } from './modules/o
 import { alertsRouter, responseLogRouter } from './modules/alerts/alerts.routes.js';
 import { devicesRouter } from './modules/devices/devices.routes.js';
 import { hospitalRouter } from './modules/hospitals/hospitals.routes.js';
+import { aiRouter } from './modules/ai/ai.routes.js';
 import { auditRouter } from './modules/audit/audit.routes.js';
 
 export function createApp() {
@@ -27,6 +28,7 @@ export function createApp() {
   app.use('/api/newborns', observationsRouter);
   app.use('/api/monitoring', monitoringRouter);
   app.use('/api/gateway', gatewayRouter);
+  app.use('/api', aiRouter);
   app.use('/api/alerts', alertsRouter);
   app.use('/api/response-log', responseLogRouter);
   app.use('/api/devices', devicesRouter);

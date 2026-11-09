@@ -4,15 +4,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, post } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import type { Hospital, RoleInfo, Rule, TeamUser, Unit } from '../types';
+import { AiModeChip } from '../components/alerts/AiPanel';
+import type { AiInteraction, AiStatus } from '../types';
+import { dt } from '../utils/format';
 import { Banner, Dialog, ErrorState, Field, Loading, errMsg, issueMap } from '../components/common/ui';
 
 export default function SettingsPage() {
   const { can } = useAuth(); const [tab, setTab] = useState('profile');
-  const tabs = [{ k: 'profile', l: 'Profile' }, { k: 'hospital', l: 'Hospital and units' }, ...(can('user:manage') ? [{ k: 'team', l: 'Team and permissions' }] : []), ...(can('device:read') ? [{ k: 'devices', l: 'Devices' }] : []), ...(can('alert:read') || can('user:manage') ? [{ k: 'rules', l: 'Alert configuration' }] : []), { k: 'security', l: 'Security' }];
+  const tabs = [{ k: 'profile', l: 'Profile' }, { k: 'hospital', l: 'Hospital and units' }, ...(can('user:manage') ? [{ k: 'team', l: 'Team and permissions' }] : []), ...(can('device:read') ? [{ k: 'devices', l: 'Devices' }] : []), ...(can('alert:read') || can('user:manage') ? [{ k: 'rules', l: 'Alert configuration' }] : []), ...(can('audit:read') ? [{ k: 'ai', l: 'AI assistance' }] : []), { k: 'security', l: 'Security' }];
   return (
     <div><div className="pagehead"><div><h1>Settings</h1></div></div>
       <div className="tabs" role="tablist">{tabs.map((t) => <button key={t.k} role="tab" aria-selected={tab === t.k} className={tab === t.k ? 'on' : ''} onClick={() => setTab(t.k)}>{t.l}</button>)}</div>
-      {tab === 'profile' && <Profile />}{tab === 'hospital' && <HospitalTab />}{tab === 'team' && <Team />}{tab === 'rules' && <Rules />}{tab === 'security' && <Security />}
+      {tab === 'profile' && <Profile />}{tab === 'hospital' && <HospitalTab />}{tab === 'team' && <Team />}{tab === 'rules' && <Rules />}{tab === 'ai' && <AiAdmin />}{tab === 'security' && <Security />}
       {tab === 'devices' && <div><p>Register devices, assign them to newborns and review connection state on the Devices page.</p><p style={{ marginTop: 10 }}><Link className="btn" to="/devices">Open devices</Link></p></div>}
     </div>
   );
@@ -63,4 +66,17 @@ function Security() {
     <Field id="np" label="New password" hint="At least 10 characters." error={iss.newPassword}><input id="np" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></Field>
     <button className="btn" disabled={m.isPending || pw.length < 10 || !cur}>{m.isPending ? 'Changing…' : 'Change password'}</button>
     <p className="small muted" style={{ marginTop: 14 }}>Sessions expire after 8 hours. Every sign-in, failed sign-in and password change is recorded in the audit log.</p></form>;
+}
+
+function AiAdmin() {
+  const st = useQuery({ queryKey: ['ai', 'status'], queryFn: () => api<AiStatus>('/ai/status') }); const q = useQuery({ queryKey: ['ai', 'interactions'], queryFn: () => api<AiInteraction[]>('/ai/interactions') });
+  if (st.isLoading || q.isLoading) return <Loading />; if (st.error) return <ErrorState error={st.error} retry={() => st.refetch()} />;
+  const s = st.data!;
+  return <div className="stack">
+    <div className="row wrap"><AiModeChip s={s} /><span className="chip">{s.enabled ? 'Enabled' : 'Switched off'}</span></div>
+    <Banner kind="info">{s.mode === 'demo' ? 'The local demo provider assembles text from stored alert data using fixed templates. It is not a language model and sends nothing outside this system. Azure integration is prepared but not connected.' : 'Azure OpenAI is configured. Only anonymised alert data is sent.'}</Banner>
+    <div className="cols"><div><h3>What it can do</h3><ul>{s.capabilities.map((c) => <li key={c}>{c}</li>)}</ul></div><div><h3>What it can never do</h3><ul>{s.cannot.map((c) => <li key={c}>{c}</li>)}</ul></div></div>
+    <div><h3>Tools and the permission each requires</h3><p className="small muted">All tools are read-only and limited to the requesting user's own hospital and permissions.</p><ul className="small">{s.tools.map((t) => <li key={t.name}><code>{t.name}</code> needs <code>{t.needs}</code></li>)}</ul></div>
+    <section className="section"><header><h2>Recent AI activity</h2><span className="small muted">Every request and tool call is recorded and cannot be edited.</span></header>
+      {!q.data?.length ? <p className="muted">No AI assistance has been used yet.</p> : <div className="tablewrap"><table><thead><tr><th>When</th><th>User</th><th>Newborn</th><th>Request</th><th>Mode</th><th>Outcome</th><th>Tools used</th></tr></thead><tbody>{q.data.map((i) => <tr key={i.id}><td className="small">{dt(i.created_at)}</td><td>{i.user_name}</td><td>{i.newborn_identifier ?? '–'}</td><td>{i.kind === 'summary' ? 'Summary' : 'Draft assessment'}</td><td>{i.mode === 'demo' ? 'Demo' : 'Azure'}</td><td><span className={`chip ${i.status === 'blocked' ? 'poor' : ''}`}>{i.status}</span>{i.safeguard_flags.length > 0 && <div className="small muted">{i.safeguard_flags.join(', ')}</div>}</td><td className="small">{i.tool_calls.map((t) => `${t.tool}${t.allowed ? '' : ' (denied)'}`).join(', ')}</td></tr>)}</tbody></table></div>}</section></div>;
 }

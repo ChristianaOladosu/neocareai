@@ -6,10 +6,10 @@ import { migrate } from './migrate.js';
 export const DEMO_PASSWORD = 'DemoPass#2026';
 
 const PERMS = ['newborn:read', 'newborn:write', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'alert:assess',
-  'alert:escalate', 'alert:resolve', 'response:read', 'device:read', 'device:manage', 'user:manage', 'unit:manage', 'audit:read'];
+  'alert:escalate', 'alert:resolve', 'response:read', 'device:read', 'device:manage', 'user:manage', 'unit:manage', 'audit:read', 'ai:summarise', 'ai:draft'];
 const ROLE_PERMS: Record<string, string[]> = {
-  Doctor: ['newborn:read', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'alert:assess', 'alert:escalate', 'alert:resolve', 'response:read', 'device:read'],
-  Nurse: ['newborn:read', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'response:read', 'device:read'],
+  Doctor: ['newborn:read', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'alert:assess', 'alert:escalate', 'alert:resolve', 'response:read', 'device:read', 'ai:summarise', 'ai:draft'],
+  Nurse: ['newborn:read', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'response:read', 'device:read', 'ai:summarise'],
   // Administrators deliberately get no observation/alert permissions (no unrestricted clinical access).
   Administrator: ['newborn:read', 'newborn:write', 'device:read', 'device:manage', 'user:manage', 'unit:manage', 'audit:read'],
 };

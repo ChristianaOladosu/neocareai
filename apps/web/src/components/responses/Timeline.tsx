@@ -14,6 +14,7 @@ export function Timeline({ events, showAlert }: { events: Array<ResponseEvent | 
           <span className="small muted">{dt(e.created_at)}</span></div>
         <div className="small muted">{e.user_name ?? 'System'}{e.previous_status && e.new_status && e.previous_status !== e.new_status ? ` · ${STATUS_LABEL[e.previous_status as keyof typeof STATUS_LABEL] ?? e.previous_status} → ${STATUS_LABEL[e.new_status as keyof typeof STATUS_LABEL] ?? e.new_status}` : ''}</div>
         {detail(e) && <div className="small" style={{ marginTop: 2, maxWidth: '70ch' }}>{detail(e)}</div>}
+        {(e.event_details as Record<string, unknown>).aiAssisted === true && <div className="small muted">Started from an AI-prepared draft (Demo Mode). Written, edited and recorded by the clinician.</div>}
       </li>))}
     </ol>
   );

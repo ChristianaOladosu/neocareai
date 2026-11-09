@@ -31,7 +31,7 @@ alertsRouter.get('/:id', requirePermission('alert:read'), asyncHandler(async (re
   if (!a.rows[0]) throw new HttpError(404, 'Alert not found', 'not_found');
   const [events, assessments] = await Promise.all([
     pool.query(`SELECT e.id, e.event_type, e.previous_status, e.new_status, e.event_details, e.created_at, u.full_name AS user_name
-                FROM response_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.alert_id=$1 ORDER BY e.created_at, e.id`, [id]),
+                FROM response_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.alert_id=$1 ORDER BY e.seq`, [id]),
     pool.query(`SELECT s.id, s.assessment_text, s.created_at, u.full_name AS clinician FROM clinical_assessments s JOIN users u ON u.id=s.clinician_id WHERE s.alert_id=$1 ORDER BY s.created_at`, [id]),
   ]);
   res.json({ ...a.rows[0], events: events.rows, assessments: assessments.rows });
@@ -39,7 +39,7 @@ alertsRouter.get('/:id', requirePermission('alert:read'), asyncHandler(async (re
 
 type Status = 'awaiting_acknowledgement' | 'acknowledged' | 'under_assessment' | 'escalated' | 'resolved';
 
-async function transition(user: AuthUser, alertId: string, from: Status[], to: Status, eventType: string, details: Record<string, unknown>, extra?: (c: pg.PoolClient) => Promise<void>) {
+async function transition(user: AuthUser, alertId: string, from: Status[], to: Status, eventType: string, details: Record<string, unknown>, extra?: (c: pg.PoolClient) => Promise<void>, after?: (c: pg.PoolClient) => Promise<void>) {
   return tx(async (c) => {
     const cur = await c.query('SELECT status FROM clinical_alerts WHERE id=$1 AND hospital_id=$2 FOR UPDATE', [alertId, user.hospitalId]);
     if (!cur.rows[0]) throw new HttpError(404, 'Alert not found', 'not_found');
@@ -48,6 +48,7 @@ async function transition(user: AuthUser, alertId: string, from: Status[], to: S
     if (extra) await extra(c);
     await c.query('UPDATE clinical_alerts SET status=$2, updated_at=now() WHERE id=$1', [alertId, to]);
     await c.query('INSERT INTO response_events(alert_id,user_id,event_type,previous_status,new_status,event_details) VALUES ($1,$2,$3,$4,$5,$6)', [alertId, user.id, eventType, prev, to, JSON.stringify(details)]);
+    if (after) await after(c);
     await audit({ hospitalId: user.hospitalId, userId: user.id, action: `alert.${eventType}`, resourceType: 'alert', resourceId: alertId, metadata: { from: prev, to } }, c);
     publish({ type: 'alert.updated', hospitalId: user.hospitalId, payload: { alertId, status: to } });
     return { id: alertId, previousStatus: prev, status: to };
@@ -58,11 +59,20 @@ alertsRouter.post('/:id/acknowledge', requirePermission('alert:acknowledge'), as
   res.json(await transition(req.user!, uuid.parse(req.params.id), ['awaiting_acknowledgement'], 'acknowledged', 'acknowledged', {}));
 }));
 
-const assessSchema = z.object({ assessmentText: z.string().trim().min(3).max(4000), responseText: z.string().trim().min(3).max(4000).optional() });
+const assessSchema = z.object({ assessmentText: z.string().trim().min(3).max(4000), responseText: z.string().trim().min(3).max(4000).optional(), aiInteractionId: z.string().uuid().optional() });
 alertsRouter.post('/:id/assessment', requirePermission('alert:assess'), asyncHandler(async (req, res) => {
   const b = assessSchema.parse(req.body); const id = uuid.parse(req.params.id); const u = req.user!;
-  res.json(await transition(u, id, ['acknowledged', 'under_assessment'], 'under_assessment', 'assessment_recorded', { assessmentLength: b.assessmentText.length }, async (c) => {
+  // An AI draft can never be recorded with its clinician-only fields still empty.
+  if (b.assessmentText.includes('[Clinician to complete') || b.responseText?.includes('[Clinician to complete')) throw new HttpError(422, 'Complete every bracketed field in the draft before recording it', 'draft_incomplete');
+  let aiNote: Record<string, unknown> = {};
+  if (b.aiInteractionId) {
+    const ai = await pool.query(`SELECT 1 FROM ai_interactions WHERE id=$1 AND alert_id=$2 AND hospital_id=$3 AND kind='draft_assessment'`, [b.aiInteractionId, id, u.hospitalId]);
+    if (!ai.rowCount) throw new HttpError(400, 'Unknown AI draft for this alert', 'invalid_ai_reference');
+    aiNote = { aiAssisted: true, aiInteractionId: b.aiInteractionId };
+  }
+  res.json(await transition(u, id, ['acknowledged', 'under_assessment'], 'under_assessment', 'assessment_recorded', { assessmentLength: b.assessmentText.length, ...aiNote }, async (c) => {
     await c.query('INSERT INTO clinical_assessments(alert_id,clinician_id,assessment_text) VALUES ($1,$2,$3)', [id, u.id, b.assessmentText]);
+  }, async (c) => {
     if (b.responseText)
       await c.query(`INSERT INTO response_events(alert_id,user_id,event_type,previous_status,new_status,event_details) VALUES ($1,$2,'response_documented','under_assessment','under_assessment',$3)`, [id, u.id, JSON.stringify({ responseText: b.responseText })]);
   }));
@@ -88,6 +98,6 @@ responseLogRouter.get('/', requireAuth, requirePermission('response:read'), asyn
   const r = await pool.query(
     `SELECT e.id, e.alert_id, e.event_type, e.previous_status, e.new_status, e.event_details, e.created_at, u.full_name AS user_name, n.newborn_identifier, a.title AS alert_title
      FROM response_events e JOIN clinical_alerts a ON a.id=e.alert_id JOIN newborns n ON n.id=a.newborn_id LEFT JOIN users u ON u.id=e.user_id
-     WHERE a.hospital_id=$1 ORDER BY e.created_at DESC, e.id LIMIT $2`, [req.user!.hospitalId, limit]);
+     WHERE a.hospital_id=$1 ORDER BY e.seq DESC LIMIT $2`, [req.user!.hospitalId, limit]);
   res.json(r.rows);
 }));

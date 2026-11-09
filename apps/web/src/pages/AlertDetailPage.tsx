@@ -7,6 +7,7 @@ import type { AlertDetail, EvidenceReading, MeasurementType } from '../types';
 import { Banner, Dialog, ErrorState, Field, Loading, PriorityChip, QualityChip, StatusChip, errMsg } from '../components/common/ui';
 import { Timeline } from '../components/responses/Timeline';
 import { TrendChart } from '../components/charts/TrendChart';
+import { AiPanel } from '../components/alerts/AiPanel';
 import { MEASUREMENTS, dt } from '../utils/format';
 
 type Action = 'assess' | 'escalate' | 'resolve' | null;
@@ -14,7 +15,7 @@ type Action = 'assess' | 'escalate' | 'resolve' | null;
 export default function AlertDetailPage() {
   const { id = '' } = useParams(); const { can } = useAuth(); const qc = useQueryClient();
   const q = useQuery({ queryKey: ['alert', id], queryFn: () => api<AlertDetail>(`/alerts/${id}`), refetchInterval: 15_000 });
-  const [action, setAction] = useState<Action>(null); const [toast, setToast] = useState('');
+  const [action, setAction] = useState<Action>(null); const [toast, setToast] = useState(''); const [draft, setDraft] = useState<{ text: string; id: string } | null>(null);
   const refresh = (msg: string) => { ['alert', 'alerts', 'response-log', 'overview'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); setToast(msg); setTimeout(() => setToast(''), 3500); };
   const ack = useMutation({ mutationFn: () => post(`/alerts/${id}/acknowledge`), onSuccess: () => refresh('Alert acknowledged') });
   if (q.isLoading) return <Loading />;
@@ -45,6 +46,8 @@ export default function AlertDetailPage() {
       </div>
       {s === 'acknowledged' && can('alert:assess') === false && <p className="small muted">A doctor must record the clinical assessment before this alert can be resolved.</p>}
 
+      <AiPanel alertId={id} status={s} canSummarise={can('ai:summarise')} canDraft={can('ai:draft')} canAssess={canAssess} onUseDraft={(text, i) => { setDraft({ text, id: i }); setAction('assess'); }} />
+
       <div className="cols">
         <div>
           <section className="section"><header><h2>Why this alert was generated</h2></header>
@@ -63,7 +66,7 @@ export default function AlertDetailPage() {
         </div>
       </div>
 
-      {action && <ActionDialog action={action} id={id} onClose={() => setAction(null)} onDone={(m) => { setAction(null); refresh(m); }} />}
+      {action && <ActionDialog action={action} id={id} draft={action === 'assess' ? draft : null} onClose={() => { setAction(null); setDraft(null); }} onDone={(m) => { setAction(null); setDraft(null); refresh(m); }} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
@@ -71,20 +74,23 @@ export default function AlertDetailPage() {
 
 const COPY = { assess: { title: 'Record clinical assessment', btn: 'Record assessment', done: 'Assessment recorded' }, escalate: { title: 'Escalate alert', btn: 'Escalate alert', done: 'Alert escalated' }, resolve: { title: 'Resolve alert', btn: 'Resolve alert', done: 'Alert resolved' } } as const;
 
-function ActionDialog({ action, id, onClose, onDone }: { action: Exclude<Action, null>; id: string; onClose: () => void; onDone: (m: string) => void }) {
-  const [text, setText] = useState(''); const [resp, setResp] = useState('');
+function ActionDialog({ action, id, draft, onClose, onDone }: { action: Exclude<Action, null>; id: string; draft: { text: string; id: string } | null; onClose: () => void; onDone: (m: string) => void }) {
+  const [text, setText] = useState(draft?.text ?? ''); const [resp, setResp] = useState('');
   const c = COPY[action];
-  const m = useMutation({ mutationFn: () => post(`/alerts/${id}/${action === 'assess' ? 'assessment' : action}`, action === 'assess' ? { assessmentText: text.trim(), ...(resp.trim() && { responseText: resp.trim() }) } : action === 'escalate' ? { reason: text.trim() } : { resolutionNote: text.trim() }), onSuccess: () => onDone(c.done) });
+  const m = useMutation({ mutationFn: () => post(`/alerts/${id}/${action === 'assess' ? 'assessment' : action}`, action === 'assess' ? { assessmentText: text.trim(), ...(resp.trim() && { responseText: resp.trim() }), ...(draft && { aiInteractionId: draft.id }) } : action === 'escalate' ? { reason: text.trim() } : { resolutionNote: text.trim() }), onSuccess: () => onDone(c.done) });
+  const incomplete = text.includes('[Clinician to complete');
   const label = action === 'assess' ? 'Clinical assessment' : action === 'escalate' ? 'Reason for escalation' : 'Resolution note';
   return (
     <Dialog title={c.title} onClose={onClose}>
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); m.mutate(); }}>
         {action === 'resolve' && <p className="small" style={{ marginBottom: 10 }}>Resolving records that a clinician has reviewed and closed this alert. It is permanent history and cannot be edited.</p>}
         {action === 'escalate' && <p className="small" style={{ marginBottom: 10 }}>Escalation is recorded with your name and the time. The alert stays open until a clinician resolves it.</p>}
+        {draft && <div className="banner warn" role="note"><div><b>Started from an AI-prepared draft (Demo Mode – Not Connected to Azure).</b> It is not a clinical finding. Edit it, replace every bracketed field with your own words, and only then record it. It is attributed to you.</div></div>}
+        {incomplete && <p className="small" role="alert" style={{ color: '#8E2F27', marginBottom: 8 }}>Replace every [Clinician to complete …] field before you can record this.</p>}
         {m.error && <div className="banner err" role="alert">{errMsg(m.error)}</div>}
-        <Field id="txt" label={label} hint="Minimum 3 characters. Entries are permanent and attributed to you."><textarea id="txt" value={text} onChange={(e) => setText(e.target.value)} required /></Field>
+        <Field id="txt" label={label} hint="Minimum 3 characters. Entries are permanent and attributed to you."><textarea id="txt" value={text} onChange={(e) => setText(e.target.value)} required style={draft ? { minHeight: 280, fontFamily: 'var(--font-mono)', fontSize: 13 } : undefined} /></Field>
         {action === 'assess' && <Field id="resp" label="Response taken (optional)" hint="For example, actions taken or follow-up planned."><textarea id="resp" value={resp} onChange={(e) => setResp(e.target.value)} /></Field>}
-        <div className="actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className={`btn ${action === 'escalate' ? '' : ''}`} disabled={text.trim().length < 3 || m.isPending}>{m.isPending ? 'Saving…' : c.btn}</button></div>
+        <div className="actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className={`btn ${action === 'escalate' ? '' : ''}`} disabled={text.trim().length < 3 || m.isPending || incomplete}>{m.isPending ? 'Saving…' : c.btn}</button></div>
       </form>
     </Dialog>
   );
