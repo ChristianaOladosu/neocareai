@@ -34,13 +34,14 @@ export default function DevicesPage() {
 }
 
 function RegisterDevice({ onClose }: { onClose: () => void }) {
-  const qc = useQueryClient(); const [id, setId] = useState(''); const [man, setMan] = useState(''); const [model, setModel] = useState('');
-  const m = useMutation({ mutationFn: () => post('/devices', { deviceIdentifier: id.trim(), ...(man && { manufacturer: man }), ...(model && { model }) }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }); onClose(); } });
+  const qc = useQueryClient(); const [id, setId] = useState(''); const [man, setMan] = useState(''); const [model, setModel] = useState(''); const [sim, setSim] = useState(true);
+  const m = useMutation({ mutationFn: () => post('/devices', { deviceIdentifier: id.trim(), isSimulated: sim, ...(man && { manufacturer: man }), ...(model && { model }) }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['devices'] }); onClose(); } });
   const iss = issueMap(m.error);
   return <Dialog title="Register device" onClose={onClose}><form onSubmit={(e: FormEvent) => { e.preventDefault(); m.mutate(); }}>
     {m.error && !Object.keys(iss).length && <div className="banner err" role="alert">{errMsg(m.error)}</div>}
     <Field id="di" label="Device identifier" error={iss.deviceIdentifier}><input id="di" value={id} onChange={(e) => setId(e.target.value)} required /></Field>
     <Field id="dm" label="Manufacturer"><input id="dm" value={man} onChange={(e) => setMan(e.target.value)} /></Field><Field id="dmo" label="Model"><input id="dmo" value={model} onChange={(e) => setModel(e.target.value)} /></Field>
+    <div className="field"><label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 500 }}><input type="checkbox" style={{ width: 'auto' }} checked={sim} onChange={(e) => setSim(e.target.checked)} />Simulated device (produces synthetic data)</label><div className="hint">No physical medical device is supported yet. Leave this ticked unless the device really is a registered monitor.</div></div>
     <div className="actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={!id.trim() || m.isPending}>{m.isPending ? 'Registering…' : 'Register device'}</button></div></form></Dialog>;
 }
 
