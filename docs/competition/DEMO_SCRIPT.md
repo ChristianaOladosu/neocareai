@@ -15,14 +15,16 @@ Open three browser windows (or profiles), each signed in: **Doctor** (`doctor@de
 
 ## Run of show
 
+Measured timings after `scripts/demo-scenarios.sh` starts (one test run): poor-signal readings from ~15 s, data-quality notice and NB-0002 disconnect at ~27 s, NB-0002 reconnect at ~57 s, NB-0001 high-priority alert at ~52 s, run complete at ~92 s. Re-time on your machine.
+
 | Time | Who | Do | Say (adapt, keep claims honest) |
 |---|---|---|---|
 | 0:00 | Slide | Title | "NeocareAI helps teams close the gap between observing a newborn and responding to what the observations mean. Everything you will see is synthetic, rules are illustrative, and it is a prototype." |
 | 0:30 | Admin | **Newborns** → Register newborn NB-0100 (no names). Then **Devices** → Register device SIM-MON-04 (ticked "Simulated") → Assign to NB-0100 | "A hospital administrator registers a baby and links a monitor. The device can only send data for the baby it is assigned to. Reassignment is confirmed and audited. Note the simulator is labelled as a simulated device." |
 | 1:30 | Doctor | On **Live Monitoring**, run `bash scripts/demo-scenarios.sh` | "Three simulated monitors are now sending. I'll narrate while they run." |
-| 1:45 | Doctor | Watch NB-0003 (poor signal at ~15 s) | "This baby's sensor signal is poor. Look at how it is shown: signal quality is separate from the value. The system will not treat poor signal as 'stable' and will not raise a clinical alert from it. It raises a data-quality notice instead." |
-| 2:20 | Doctor | Watch NB-0002 (disconnect at ~25 s) | "This monitor disconnected. The numbers are struck through and marked Not current. We never show a stale value as a live normal reading. When it reconnects, buffered readings are delivered in order." |
-| 2:50 | Doctor | NB-0001 rises, bell badge appears (~50 s). Open the bell | "NB-0001's heart rate and respiratory rate have both stayed above the demo thresholds across consecutive good-quality readings. The alert arrived in real time." |
+| 1:45 | Doctor | Watch NB-0003. Poor readings are visible from ~15 s after the scripts start; the data-quality notice appears at ~27 s | "This baby's sensor signal is poor. Look at how it is shown: signal quality is separate from the value. The system will not treat poor signal as 'stable' and will not raise a clinical alert from it. It raises a data-quality notice instead." |
+| 2:15 | Doctor | Watch NB-0002. It disconnects at ~27 s and reconnects at ~57 s | "This monitor disconnected. The numbers are struck through and marked Not current. We never show a stale value as a live normal reading. When it reconnects, buffered readings are delivered in order." |
+| 2:50 | Doctor | NB-0001 rises; the bell badge appears at ~52 s. Open the bell | "NB-0001's heart rate and respiratory rate have both stayed above the demo thresholds across consecutive good-quality readings. The alert arrived in real time." |
 | 3:30 | Doctor | Open the alert (**Review alert**) | "Opening it does not dismiss it. It says why: which rule and version, the exact triggering readings, their signal quality, and the context. The banner reminds you this is an illustrative rule, not clinical guidance." |
 | 4:15 | Doctor | **AI assistance panel**: point at the label, then **Summarise this alert** | "This is the controlled AI assistance, shown in Demo Mode, not connected to Azure. It summarises the stored data and nothing else. It does not diagnose, advise treatment, or change anything. Sources and limitations are one click away." Open **Sources and limitations**. |
 | 5:00 | Doctor | **Prepare draft assessment**. Point to the three bracketed fields. Note **Edit draft** is disabled | "The draft fills in what the system knows and deliberately leaves the clinical parts blank. It cannot be edited into the record until the alert has been acknowledged by a clinician." |
@@ -35,7 +37,7 @@ Open three browser windows (or profiles), each signed in: **Doctor** (`doctor@de
 
 ## If something goes wrong
 
-- Alert slow to appear: scenario B alerts after ~50 s; keep talking about quality and disconnection. If still absent, run `npm run simulate -- --scenario=B --device=SIM-MON-01 --fast` (instant, same alert).
+- Alert slow to appear: measured at ~52 s after the scripts start (whole run about 92 s); keep talking about quality and disconnection. If still absent, run `npm run simulate -- --scenario=B --device=SIM-MON-01 --fast` (instant, same alert).
 - Readings all show "Not current": scenarios ended more than 2 minutes ago. This is the feature working. Run `npm run simulate -- --scenario=A --device=SIM-MON-01 --fast` to refresh.
 - Service crashed: restart that terminal; data persists. As a last resort, `npm run seed:reset` and re-run.
 - Keep screenshots of each step as a backup.
