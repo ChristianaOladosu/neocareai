@@ -10,6 +10,7 @@ import { newbornsRouter } from './modules/newborns/newborns.routes.js';
 import { observationsRouter, monitoringRouter, gatewayRouter } from './modules/observations/observations.routes.js';
 import { alertsRouter, responseLogRouter } from './modules/alerts/alerts.routes.js';
 import { devicesRouter } from './modules/devices/devices.routes.js';
+import { hospitalRouter } from './modules/hospitals/hospitals.routes.js';
 import { auditRouter } from './modules/audit/audit.routes.js';
 
 export function createApp() {
@@ -30,6 +31,7 @@ export function createApp() {
   app.use('/api/response-log', responseLogRouter);
   app.use('/api/devices', devicesRouter);
   app.use('/api/audit', auditRouter);
+  app.use('/api', hospitalRouter);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found', message: 'Unknown endpoint' }));
   app.use(errorMiddleware);
   return app;
