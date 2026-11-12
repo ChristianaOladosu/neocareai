@@ -11,7 +11,7 @@ Any care of real patients. Any decision about a newborn. Any use with real patie
 - Every alert must be acknowledged by a clinician; nothing closes automatically, even if values return to a previous level.
 - Resolution requires a recorded clinician assessment. Every transition is attributed and timestamped in an append-only history.
 - Opening an alert never changes it.
-- AI assistance cannot diagnose, advise treatment, dismiss or resolve alerts, or alter records (see RESPONSIBLE_AI.md).
+- AI assistance (Demo Mode templates or, if configured, a real Azure OpenAI model) cannot diagnose, advise treatment or medication, acknowledge, escalate, dismiss or resolve alerts, or alter records. Any AI draft must be completed and recorded by the clinician; rejection is an explicit audited decision (see RESPONSIBLE_AI.md).
 
 ## Illustrative rules
 
@@ -26,10 +26,18 @@ All rules and thresholds (for example heart rate above 180, respiratory rate abo
 | Missed alert | Unacknowledged alerts shown in badge, notification centre and overview | Notification channels (pager, audible) not built |
 | Wrong-baby attribution | One active assignment per device and newborn; mismatches rejected; audited; confirmation dialog | Physical cot-side verification is a human process |
 | Alert fatigue | One open alert per newborn per rule | Not evaluated with real workloads |
-| Over-reliance on AI | Prominent Demo Mode label, scope statement, placeholders that must be completed, safety filter | Behaviour of a real language model is not evaluated |
+| Over-reliance on AI | Always-visible source label (template vs real model), scope statement, source chips on every fact, a "what the AI did not have" list, placeholders the server (not the model) writes and the clinician must complete, explicit accept/reject | Automation bias not tested with clinicians |
+| Real model states something false or invented | Facts must cite existing records and use only numbers from them; unsupported output is rejected and not shown; no template is substituted | Validation cannot prove clinical correctness; **real-model error rates are unmeasured** because no real model has been connected |
+| Real model gives diagnosis, treatment or reassurance | Prompt rules plus base and strict pattern filters on every statement; flagged output rejected and audited | Pattern filters can miss paraphrases; no red-team evaluation yet |
+| Identifiable data sent to an external service | Anonymised minimum-necessary payload, relative times, roles not names, privacy guard against known identifiers; digest audited | Guard is pattern- and list-based; a data-protection review is still required |
+| AI outage or misconfiguration at a critical moment | AI is optional; explicit errors; workflow unaffected; explicit Demo Mode switch | Not exercised against real Azure outages |
 | Silent history change | Database triggers block UPDATE/DELETE on history | A database superuser could still alter data |
 | Cross-hospital exposure | Hospital filter on every query; tested | Row-level security not enabled |
 | Rule or software error | Automated tests; rules versioned and stored with each alert | No clinical safety case, no independent review |
+
+## AI-specific statement
+
+The AI features are decision *support for documentation* only. A real generative model has **not** been connected or evaluated by the authors: the Azure integration was exercised only against a local mock. No claim is made about the accuracy, safety or usefulness of real model output. Before using a real model with clinicians: complete the evaluation listed in RESPONSIBLE_AI.md, with neonatal clinician review.
 
 ## Known gaps against the original product specification
 
@@ -38,6 +46,8 @@ All rules and thresholds (for example heart rate above 180, respiratory rate abo
 - Manual observation entry exists as an API but has no UI form.
 - No notification channel beyond the in-app badge and list.
 - No data-retention or deletion policy is implemented.
+- No Azure AI Search or approved clinical knowledge base; the AI is given system documentation only.
+- Real-model evaluation (accuracy, hallucination, bias, consistency, injection) has not been done.
 
 ## Required before any real-world use
 

@@ -1,57 +1,56 @@
 # Responsible AI Statement
 
-## Honest summary
+## Where things stand (read this first)
 
-- The AI assistance in this prototype runs in **Demo Mode – Not Connected to Azure**. It uses a **local template provider**: fixed text templates filled with numbers from the alert data. **It is not a language model**, makes no network calls and needs no credentials.
-- An **Azure OpenAI provider is written but has never been run against Azure**, because no credentials were available. It is an integration seam, not a demonstrated capability.
-- The alert engine itself is **rule-based, transparent and does not use AI**. The product's core works without any AI service.
-- No retrieval of approved clinical guidance exists. The small knowledge base holds **system documentation only** (how rules, signal quality, the lifecycle and AI assistance work), with identifiable source IDs. No clinical guidance is loaded or invented.
+| Capability | Status |
+|---|---|
+| Demo Mode: fixed templates filled from stored data (not a language model) | **Implemented and tested.** Default |
+| Azure OpenAI generative provider through the official SDK | **Implemented.** Tested **only against a local mock of the Azure API**. **Never connected to a real Azure deployment by the authors** |
+| Output validation, anonymisation, privacy guard, error handling, clinician decisions, audit | **Implemented and tested** (with the mock) |
+| Real-model behaviour: factual accuracy, hallucination rate, safety-filter miss rate, bias, consistency, prompt-injection resistance, cost, latency | **Not measured. Unknown until a real deployment is evaluated** |
+| Retrieval of approved clinical guidance (Azure AI Search) | **Not built.** The knowledge base holds system documentation only |
+| Alert generation | **Rule-based, transparent, no AI.** The core product works with AI off |
+
+No test in this repository demonstrates that a real language model produces safe or accurate output. The mock returns text that was written to be valid; it shows that *our controls* accept good output and reject bad output, not that a real model will behave.
 
 ## Purpose
 
-Reduce the reading effort of an alert: organise the stored evidence, and give the clinician a starting structure for their own assessment. It never replaces judgement.
+Help a clinician read and document an alert faster by organising stored data: summarising an alert, explaining stored measurement trends, organising earlier observations and recorded responses, preparing the system-data part of a draft assessment, suggesting neutral questions, and producing a documentation checklist. It never replaces judgement and never decides.
 
-## What it can do
+## What it can never do, and how that is enforced
 
-Summarise an existing alert from stored data (rule, readings, trend, signal quality, earlier context, response so far, sources, limitations, neutral questions for the team) and prepare a draft assessment whose system-data lines are filled in and whose three clinical fields are left for the clinician.
-
-## What it cannot do (enforced, not just promised)
-
-| Rule | How it is enforced | Tested |
+| Rule | Enforcement | Tested |
 |---|---|---|
-| Cannot change anything | Tools are read-only; no write tool exists; the AI path performs no writes to alerts, assessments or observations | Yes: counts unchanged after AI use |
-| Cannot acknowledge, escalate, dismiss or resolve | No such tool; status transitions live only in clinician-permissioned endpoints | Yes |
-| Cannot diagnose or advise treatment | Output safety filter on every provider's output blocks diagnosis, treatment, dismissal, reassurance and autonomous-action language; flagged output is withheld and recorded | Yes: 14 phrase cases plus no false positives on the demo's own text |
-| Cannot put an unreviewed draft in the record | Draft contains three `[Clinician to complete …]` fields; UI disables recording while any remain; server returns 422 | Yes (API and browser) |
-| Only sees what the user may see | Each tool checks the requesting user's permission and hospital; denials are audited | Yes |
-| Cannot leak identifiers | Provider receives an anonymised bundle: no newborn identifier, name or user identity | Yes (checked in the stubbed Azure request) |
-| Must be auditable | Every request, tool call, denial, outcome and safeguard flag is stored append-only and audited | Yes |
-| Must not be a dependency | `AI_ENABLED=false` and provider failure leave the workflow working; Azure failure falls back to Demo Mode | Yes |
+| Never change any record or observation | Tools are read-only; no write path exists in the AI module; the only AI writes are its own append-only audit rows | Record counts unchanged after real-provider calls |
+| Never acknowledge, escalate, dismiss or resolve | No such tool. Those actions live only in clinician-permissioned endpoints | Yes |
+| Never diagnose, advise treatment or medication | Prompt rules plus two layers of output checks (base filter and strict patterns). Flagged output is rejected and not shown | 15 rejection scenarios (unit) and 12 through the SDK path |
+| Never put an unreviewed draft in the record | The server writes the clinician-only fields (the model cannot fill them); the UI blocks recording while any remain; the server returns 422 | Yes (API and browser) |
+| Clinician approval is explicit | A draft can only be recorded by its own author, once; rejection is an explicit recorded decision; both are audited | Yes |
+| Only what the user may see | Each tool checks the requesting user's permission and hospital; denials are audited | Yes |
+| Not a dependency | `AI_ENABLED=false`, any Azure failure, or no configuration leaves the workflow fully working | Yes |
 
-Tool use is a **fixed, controlled workflow** chosen by the service, not by a model, which removes tool-selection risk. A future agentic design would need its own safety case.
+## Output validation (what it does and does not prove)
 
-## Evaluation performed (and not performed)
+Before anything from the real model is shown it must: be valid JSON of the expected shape; use only the allowed headings; give every factual statement at least one **source reference that exists** in the supplied records; contain only **numbers that appear in the cited records** (within rounding); mention a measurement (heart rate, respiratory rate, oxygen, temperature) only where a record of that measurement is cited; contain no diagnosis, treatment or medication wording, causes, predictions, severity judgements, reassurance, instructions or markup. Facts are shown with their source chips, a "What the AI did not have" list is always included, and the sources listed are attached by the system, never taken from the model's text.
 
-| Dimension | What was done | What was not done |
-|---|---|---|
-| Grounding | Automated check that every measurement value stated by the demo provider exists in the alert data | Not evaluated for a real language model |
-| Hallucination | N/A for templates (no free generation) | Real-model hallucination rate unknown |
-| Unsafe recommendations | Filter tests against 14 unsafe phrasings; stubbed model returning a diagnosis and "no action needed" is withheld | The filter is pattern-based and can miss paraphrases; no red-team evaluation |
-| Source attribution | Sources are attached by the system from what was actually retrieved, never taken from model output | No retrieval of approved clinical material exists |
-| Consistency | Demo provider is deterministic | Model consistency untested |
-| Bias | Not evaluated | Needed for any model-generated text and for the rules themselves |
-| Missing context | Every output lists its limits ("no bedside or clinical context") | Not tested with clinicians |
-| Prompt injection | Inputs are system-generated alert data, not free text | Not tested with a real model |
-| Usability / automation bias | Not tested | Clinicians may over-trust fluent text; needs a usability study |
+**Passing these checks does not mean the text is clinically correct.** They cannot detect a statement that is true to the data but misleading, an omission, or a pattern the filters do not know. A real model may also be rejected too often if it does not follow the format. The interface says this next to every result.
 
-## Limitations
+## Data privacy
 
-The summary can only restate stored data; it cannot know the clinical situation. Template text is rigid. The filter is a safety net, not a guarantee. Alert rules are illustrative, so any summary of an alert inherits that status (it says so). A future model-based provider must repeat the evaluation above on realistic synthetic cases, with clinician review, before any use.
+Sent to the provider: measurement values, units, signal quality, times **relative to the alert**, server-computed trend facts, event types and **roles**, and generic system documentation. **Never sent:** newborn identifiers, hospital or unit names, user names or emails, device identifiers, absolute timestamps, gestational age, or free-text clinician notes. A privacy guard checks the serialised request against the real identifiers in the database and against identifier patterns, and refuses to send if anything matches. Credentials are read from the server environment, are never returned to clients and never written to logs or the database (tested). Synthetic data only is used in this project. Before any real data: data-processing agreement, region, retention, abuse-monitoring settings and a legal basis must be settled.
 
-## Privacy
+## Audit
 
-Synthetic data only. Nothing is sent outside the system in Demo Mode. If Azure were enabled: only the anonymised bundle would be sent, and a data-processing agreement, region, retention and consent position would need to be settled first. Do not send identifiable patient information to external AI services.
+Every request records: provider, model/deployment, requested mode, user and role, alert, permission decisions for each tool, validation result and flags, latency, outcome (including failures and rejected output), a SHA-256 digest of the anonymised payload (proves what was sent without storing it), and later the clinician's decision (recorded, whether edited, or rejected). Records are append-only. Neither patient identifiers nor secrets are stored in them (tested).
 
-## Governance for a future deployment
+## Failure behaviour
 
-Named clinical owner for AI features · versioned prompts and safeguards · periodic review of the AI activity log (already available to administrators) · incident process for withheld or wrong outputs · re-evaluation on every model or prompt change.
+Azure outages, timeouts, rate limits, bad credentials, wrong deployment, content filtering, truncated or malformed answers and failed validation each produce a specific message. **No template is ever shown in place of a real response.** Clinicians can explicitly switch to Demo Mode, which is labelled "Demo Mode – Not Connected to Azure". Duplicate identical in-flight requests are refused.
+
+## Evaluation still required before any real-model use
+
+Measure on realistic synthetic cases, with neonatal clinician review: factual accuracy against the source records; hallucination and omission rates; false-accept rate of the safety filters (red-team with paraphrased diagnoses and instructions); rejection rate of acceptable output; consistency across runs; bias; prompt-injection resistance; latency and cost; and automation bias in users. Re-run on every model, prompt or API-version change. Appoint a named clinical owner for AI features.
+
+## Known limitations
+
+The first live call may need adjustments (model JSON-mode support, parameters such as temperature, API version). Pattern-based filters can miss paraphrases. Validation can reject legitimate output. The alert rules themselves are illustrative and not clinically approved. Template text is rigid. Keyless Microsoft Entra ID authentication is implemented but untested.

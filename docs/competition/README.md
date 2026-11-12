@@ -9,4 +9,4 @@
 | Origin and journey (team to complete the marked sections) | [../../NEOCAREAI_ORIGIN_AND_JOURNEY.md](../../NEOCAREAI_ORIGIN_AND_JOURNEY.md) |
 | Honest test report | [../TEST_REPORT.md](../TEST_REPORT.md) |
 
-Note: the deck was generated but its rendering has not been visually checked. Open it and page through before presenting.
+Note: the deck's rendering has not been visually checked. Open it and page through before presenting. The AI slides describe the Azure integration as implemented and tested against a simulated service, not yet connected to a real Azure deployment. Update them only after `npm run ai:check` passes on your own deployment.

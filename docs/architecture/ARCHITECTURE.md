@@ -29,7 +29,8 @@ Status: working prototype. Synthetic data only. Thresholds are illustrative.
  APPEND-ONLY RESPONSE HISTORY + AUDIT LOG
 
  AI ASSISTANCE (optional, read-only): reads an existing alert through permission-checked tools,
- returns a summary or a draft with clinician-only fields. It writes nothing.
+ anonymises it, asks a provider (Demo templates OR Azure OpenAI), validates the answer against the stored
+ records, and returns a summary, draft or checklist. It writes nothing to the clinical record.
 ```
 
 ## Components
@@ -71,3 +72,29 @@ Not yet done: TLS termination and deployment hardening, penetration test, formal
 ## Scaling and future work
 
 Multi-hospital isolation exists at query level (row-level security in PostgreSQL is a sensible hardening step). Observation volume would warrant time-partitioning. The gateway would become a durable-queue-backed service. See [DEVICE_INTEGRATION.md](../device-integration/DEVICE_INTEGRATION.md).
+
+
+## AI assistance pipeline (Azure OpenAI or Demo Mode)
+
+```
+ clinician request {kind, mode}
+   -> permission check (ai:summarise / ai:draft)           -> hospital-scoped, read-only TOOLS (alert, observations, history, guidance)
+   -> in-flight duplicate guard                              -> each tool checks the user's own permission; denials are audited
+   -> mode: 'demo' ------------------------------------------> template provider -> base safety filter -> result (label: Demo Mode)
+   -> mode: 'azure' (only if configured; else refuse, never fall back)
+        buildPayload  : anonymise, relative times, id on every record (A1, T1.., C1.., L1.., F1.. trends, E1.. events)
+        privacy guard : refuse to send if any identifier / name / email / UUID / absolute timestamp is present
+        AzureOpenAI SDK (deployment, api-version, timeout, 1 retry) -> JSON response
+        validate      : JSON + schema + allowed headings + every fact cites existing records + every number appears in a cited record
+                        + measurement words match cited records + base safety filter + strict patterns (diagnosis, treatment, medication,
+                        causes, prediction, severity, instructions, markup)
+        assemble      : server writes the draft header, the source list, 'what the AI did not have', and the clinician-only fields
+   -> record in ai_interactions (append-only) + audit_logs; return, or return an explicit error (never a substitute)
+ clinician decision on a draft -> ai_draft_decisions (recorded | rejected), append-only
+```
+
+Modules: `services/api/src/modules/ai/` (`ai.service.ts` orchestration, `tools.ts` permissioned read-only tools, `safeguards.ts` filters, `providers/demo.provider.ts`, `providers/azure.provider.ts`) and `ai/azure/` (`config.ts`, `client.ts` SDK client and error classification, `payload.ts` anonymisation and privacy guard, `prompts.ts`, `validate.ts`).
+
+Design decisions: the tool set is fixed by the service (no model-chosen tool use); the model never writes the clinician-only fields; sources shown to the user are attached by the system from what was cited and verified, never taken from model text; errors are categorised and never carry raw provider messages; credentials are read from the environment on the server only; Azure is used only when configured **and** selected.
+
+Status: the Azure path has been exercised only against a local mock of the Azure OpenAI API through the real SDK client. It has not been run against a real deployment.
