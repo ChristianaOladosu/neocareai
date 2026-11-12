@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string, public issues?: Array<{ path: string; message: string }>) { super(message); }
+  constructor(public status: number, public code: string, message: string, public issues?: Array<{ path: string; message: string }>, public data?: Record<string, any>) { super(message); }
 }
 type Opts = { method?: string; body?: unknown };
 export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
@@ -10,7 +10,7 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('neocare:unauthenticated'));
-    throw new ApiError(res.status, data.error ?? 'error', data.message ?? 'Request failed', data.issues);
+    throw new ApiError(res.status, data.error ?? 'error', data.message ?? 'Request failed', data.issues, data);
   }
   return data as T;
 }

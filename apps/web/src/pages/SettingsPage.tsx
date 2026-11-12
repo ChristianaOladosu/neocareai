@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, post } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import type { Hospital, RoleInfo, Rule, TeamUser, Unit } from '../types';
-import { AiModeChip } from '../components/alerts/AiPanel';
-import type { AiInteraction, AiStatus } from '../types';
+import { ModeChip } from '../components/alerts/AiPanel';
+import type { AiConnectionTest, AiInteraction, AiStatus } from '../types';
 import { dt } from '../utils/format';
 import { Banner, Dialog, ErrorState, Field, Loading, errMsg, issueMap } from '../components/common/ui';
 
@@ -69,14 +69,28 @@ function Security() {
 }
 
 function AiAdmin() {
-  const st = useQuery({ queryKey: ['ai', 'status'], queryFn: () => api<AiStatus>('/ai/status') }); const q = useQuery({ queryKey: ['ai', 'interactions'], queryFn: () => api<AiInteraction[]>('/ai/interactions') });
+  const { can } = useAuth(); const qc = useQueryClient();
+  const st = useQuery({ queryKey: ['ai', 'status'], queryFn: () => api<AiStatus>('/ai/status') }); const q = useQuery({ queryKey: ['ai', 'interactions'], queryFn: () => api<AiInteraction[]>('/ai/interactions'), refetchInterval: 15_000 });
+  const test = useMutation({ mutationFn: () => post<AiConnectionTest>('/ai/test-connection'), onSuccess: () => qc.invalidateQueries({ queryKey: ['ai'] }) });
   if (st.isLoading || q.isLoading) return <Loading />; if (st.error) return <ErrorState error={st.error} retry={() => st.refetch()} />;
-  const s = st.data!;
+  const s = st.data!; const a = s.azure; const lt = a.lastConnectionTest;
   return <div className="stack">
-    <div className="row wrap"><AiModeChip s={s} /><span className="chip">{s.enabled ? 'Enabled' : 'Switched off'}</span></div>
-    <Banner kind="info">{s.mode === 'demo' ? 'The local demo provider assembles text from stored alert data using fixed templates. It is not a language model and sends nothing outside this system. Azure integration is prepared but not connected.' : 'Azure OpenAI is configured. Only anonymised alert data is sent.'}</Banner>
+    <div className="row wrap"><ModeChip mode={s.defaultMode} /><span className="chip">Default: {s.defaultMode === 'azure' ? 'Azure OpenAI' : 'Demo Mode'}</span><span className="chip">{s.enabled ? 'AI enabled' : 'AI switched off'}</span><span className={`chip ${a.configured ? 'good' : ''}`}>{a.configured ? 'Azure configured' : 'Azure not configured'}</span></div>
+    <Banner kind={a.configured ? 'info' : 'warn'}>{a.configured
+      ? `Azure OpenAI is configured${a.deployment ? ` (deployment ${a.deployment}, API ${a.apiVersion}, ${a.auth} auth)` : ''}. Configured does not mean verified: run the connection test. Only anonymised, minimum-necessary data is sent, and credentials stay on the server.`
+      : `Azure OpenAI is not configured${a.configurationProblem ? `: ${a.configurationProblem}` : ''}. Only Demo Mode (template text, no AI model) is available. See the README section "Connecting Azure OpenAI".`}</Banner>
+    {a.configured && <div className="row wrap">{can('ai:manage') && <button className="btn" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? 'Testing…' : 'Test Azure connection'}</button>}
+      <span className="small">{lt ? <>Last test: <b>{lt.ok ? 'connected' : `failed (${lt.category})`}</b>{lt.model ? `, model ${lt.model}` : ''}, {dt(lt.at)}.</> : <span className="muted">No connection test has been run. The integration has not been verified against Azure from this system.</span>}</span></div>}
+    {test.data && <Banner kind={test.data.ok ? 'info' : 'err'}>{test.data.message}{test.data.latencyMs !== undefined ? ` (${test.data.latencyMs} ms)` : ''}</Banner>}{test.error && <div className="banner err" role="alert">{errMsg(test.error)}</div>}
     <div className="cols"><div><h3>What it can do</h3><ul>{s.capabilities.map((c) => <li key={c}>{c}</li>)}</ul></div><div><h3>What it can never do</h3><ul>{s.cannot.map((c) => <li key={c}>{c}</li>)}</ul></div></div>
     <div><h3>Tools and the permission each requires</h3><p className="small muted">All tools are read-only and limited to the requesting user's own hospital and permissions.</p><ul className="small">{s.tools.map((t) => <li key={t.name}><code>{t.name}</code> needs <code>{t.needs}</code></li>)}</ul></div>
-    <section className="section"><header><h2>Recent AI activity</h2><span className="small muted">Every request and tool call is recorded and cannot be edited.</span></header>
-      {!q.data?.length ? <p className="muted">No AI assistance has been used yet.</p> : <div className="tablewrap"><table><thead><tr><th>When</th><th>User</th><th>Newborn</th><th>Request</th><th>Mode</th><th>Outcome</th><th>Tools used</th></tr></thead><tbody>{q.data.map((i) => <tr key={i.id}><td className="small">{dt(i.created_at)}</td><td>{i.user_name}</td><td>{i.newborn_identifier ?? '–'}</td><td>{i.kind === 'summary' ? 'Summary' : 'Draft assessment'}</td><td>{i.mode === 'demo' ? 'Demo' : 'Azure'}</td><td><span className={`chip ${i.status === 'blocked' ? 'poor' : ''}`}>{i.status}</span>{i.safeguard_flags.length > 0 && <div className="small muted">{i.safeguard_flags.join(', ')}</div>}</td><td className="small">{i.tool_calls.map((t) => `${t.tool}${t.allowed ? '' : ' (denied)'}`).join(', ')}</td></tr>)}</tbody></table></div>}</section></div>;
+    <section className="section"><header><h2>Recent AI activity</h2><span className="small muted">Every request, tool call, outcome and clinician decision is recorded and cannot be edited.</span></header>
+      {!q.data?.length ? <p className="muted">No AI assistance has been used yet.</p> : <div className="tablewrap"><table><thead><tr><th>When</th><th>User (role)</th><th>Newborn</th><th>Request</th><th>Source</th><th>Outcome</th><th>Checks</th><th>Clinician decision</th><th>Tools</th></tr></thead><tbody>{q.data.map((i) => <tr key={i.id}>
+        <td className="small">{dt(i.created_at)}</td><td>{i.user_name}<div className="small muted">{i.user_role}</div></td><td>{i.newborn_identifier ?? '–'}</td>
+        <td>{i.kind === 'summary' ? 'Summary' : i.kind === 'draft_assessment' ? 'Draft assessment' : 'Checklist'}</td>
+        <td>{i.mode === 'demo' ? 'Demo (template)' : 'Azure OpenAI'}<div className="small muted">{i.model_id ?? ''}</div></td>
+        <td><span className={`chip ${i.status === 'completed' ? 'good' : 'poor'}`}>{i.status}</span>{i.error_category && <div className="small muted">{i.error_category.replace(/_/g, ' ')}</div>}{i.latency_ms !== null && <div className="small muted">{i.latency_ms} ms</div>}</td>
+        <td className="small">{i.validation?.passed === undefined ? '–' : i.validation.passed ? 'passed' : 'failed'}{i.safeguard_flags.length > 0 && <div className="muted">{i.safeguard_flags.join(', ')}</div>}</td>
+        <td className="small">{i.decision === 'recorded' ? `Recorded${i.decision_modified ? ' (edited)' : ' (unedited)'}` : i.decision === 'rejected' ? 'Rejected' : i.kind === 'draft_assessment' && i.status === 'completed' ? <span className="muted">No decision yet</span> : '–'}</td>
+        <td className="small">{i.tool_calls.map((t) => `${t.tool}${t.allowed ? '' : ' (denied)'}`).join(', ')}</td></tr>)}</tbody></table></div>}</section></div>;
 }

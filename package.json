@@ -20,7 +20,8 @@
     "seed:reset": "npm run seed -w @neocareai/api -- --reset",
     "web": "npm run dev -w @neocareai/web",
     "gateway": "npm run start -w @neocareai/device-gateway",
-    "simulate": "npm run start -w @neocareai/simulator --"
+    "simulate": "npm run start -w @neocareai/simulator --",
+    "ai:check": "npm run ai:check -w @neocareai/api"
   },
   "dependencies": {
     "pg": "^8.13.0"

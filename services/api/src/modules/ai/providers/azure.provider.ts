@@ -1,39 +1,34 @@
+import { createHash } from 'node:crypto';
 import type { AiKind, AiOutput, AiProvider, Bundle } from '../types.js';
-import { PLACEHOLDER_TOKEN } from '../types.js';
+import { azureConfig, azureConfigured } from '../azure/config.js';
+import { AzureError, callAzure } from '../azure/client.js';
+import { assertAnonymised, buildPayload } from '../azure/payload.js';
+import { buildMessages } from '../azure/prompts.js';
+import { validateModelOutput, type Validation } from '../azure/validate.js';
+
+export { azureConfigured };
+export class OutputRejected extends Error { constructor(public validation: Validation) { super('output_rejected'); } }
+export interface AzureResult { output: AiOutput; validation: Validation; model: string; digest: string; deployment: string }
 
 /**
- * AZURE OPENAI PROVIDER (prepared, NOT verified).
- * Written to the documented Azure OpenAI chat-completions REST contract. It has never been executed against Azure in this
- * prototype because no credentials were available. Treat it as an integration seam to be tested before any use.
- * Selected only when AI_PROVIDER=azure and AZURE_OPENAI_ENDPOINT / _API_KEY / _DEPLOYMENT are all set.
- * Privacy: it is sent only the anonymised Bundle (no newborn or user identifiers). Output still passes the same safeguards.
+ * REAL generative provider (Azure OpenAI chat completions via the official `openai` SDK's AzureOpenAI client).
+ * Pipeline: anonymise -> privacy guard -> call model -> parse -> validate against the stored records -> return, or reject.
+ * STATUS: exercised only against mocked/simulated Azure responses. It has NOT been connected to a real Azure deployment by the authors.
  */
-const SYSTEM = `You help clinicians review an existing alert. You may ONLY restate and organise the supplied data.
-You must NOT diagnose, recommend or describe treatment, say an alert can be dismissed or resolved, reassure about the newborn's condition, or make any decision.
-Use only supplied numbers. Return JSON: {"title": string, "sections": [{"heading": string, "text": string}], "draftText"?: string}.
-For a draft assessment, leave exactly three fields as "${PLACEHOLDER_TOKEN}: ...]" for the clinician: bedside assessment, interpretation, actions.`;
-
-export function azureConfigured() { return !!(process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_DEPLOYMENT); }
+export async function azureGenerate(kind: AiKind, bundle: Bundle, opts: { forbidden: string[] }): Promise<AzureResult> {
+  const cfg = azureConfig(); if (!cfg) throw new AzureError('misconfigured');
+  const payload = buildPayload(bundle);
+  const messages = buildMessages(kind, payload);
+  assertAnonymised(JSON.stringify(messages), opts.forbidden);            // throws PrivacyError before anything is sent
+  const digest = createHash('sha256').update(JSON.stringify({ r: payload.records.map((r) => [r.id, r.data]), d: payload.docs.map((d) => d.id) })).digest('hex');
+  const { content, model } = await callAzure(messages);
+  const header = `Alert: ${bundle.alert.title} (${bundle.alert.priority} priority). Status when drafted: ${bundle.alert.status.replace(/_/g, ' ')}.`;
+  const v = validateModelOutput(content, kind, payload, header);
+  if (!v.ok) throw new OutputRejected(v.validation);
+  return { output: v.output, validation: v.validation, model, digest, deployment: cfg.deployment };
+}
 
 export const azureProvider: AiProvider = {
-  name: 'azure-openai', mode: 'azure', label: 'Azure OpenAI (configured, unverified in this prototype)',
-  async generate(kind: AiKind, b: Bundle): Promise<AiOutput> {
-    const ep = process.env.AZURE_OPENAI_ENDPOINT!.replace(/\/$/, ''); const dep = process.env.AZURE_OPENAI_DEPLOYMENT!;
-    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 15000);
-    try {
-      const res = await fetch(`${ep}/openai/deployments/${encodeURIComponent(dep)}/chat/completions?api-version=2024-10-21`, {
-        method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'api-key': process.env.AZURE_OPENAI_API_KEY! },
-        body: JSON.stringify({ temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: JSON.stringify({ task: kind, data: b }) }] }),
-      });
-      if (!res.ok) throw new Error(`Azure responded ${res.status}`);
-      const j: any = await res.json(); const parsed = JSON.parse(j.choices[0].message.content);
-      if (typeof parsed.title !== 'string' || !Array.isArray(parsed.sections)) throw new Error('Unexpected Azure response shape');
-      return {
-        title: parsed.title, sections: parsed.sections.map((s: any) => ({ heading: String(s.heading), text: String(s.text) })), draftText: kind === 'draft_assessment' && typeof parsed.draftText === 'string' ? parsed.draftText : undefined,
-        // Sources are attached by the system from what was actually retrieved, never taken from model output (no fabricated citations).
-        sources: [{ id: 'ALERT-EVIDENCE', title: 'Stored alert evidence', kind: 'system-data' }, ...b.guidance.map((g) => ({ id: g.id, title: g.title, kind: 'system-documentation' as const }))],
-        limitations: ['Generated by a language model from stored alert data only. Verify against the alert data.', 'Not a diagnosis, assessment or recommendation.', 'Alert rules are illustrative and not clinically approved.'],
-      };
-    } finally { clearTimeout(timer); }
-  },
+  name: 'azure-openai', mode: 'azure', label: 'Generated by Azure OpenAI',
+  async generate(kind, b) { return (await azureGenerate(kind, b, { forbidden: [] })).output; },
 };

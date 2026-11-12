@@ -35,7 +35,7 @@ with sync_playwright() as p:
     ta.fill(re.sub(r'\[Clinician to complete[^\]]*\]', 'Completed by the clinician (synthetic demo).', val))
     check('recording unlocks once every field is completed', lambda: expect(dlg.get_by_role('button', name='Record assessment')).to_be_enabled())
     dlg.get_by_role('button', name='Record assessment').click(); page.wait_for_timeout(1200)
-    check('history marks the assessment as started from an AI draft', lambda: expect(page.get_by_text('Started from an AI-prepared draft (Demo Mode). Written, edited and recorded by the clinician.')).to_be_visible())
+    check('history marks the assessment as started from an AI draft', lambda: expect(page.get_by_text('Started from an AI-prepared draft (Demo Mode, template text). Edited and recorded by the clinician.')).to_be_visible())
     check('alert is still open (AI did not resolve it)', lambda: expect(page.get_by_text('Under assessment').first).to_be_visible())
     page.screenshot(path=f'{OUT}/ai_after.png', full_page=True)
 

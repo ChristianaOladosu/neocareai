@@ -64,14 +64,25 @@ alertsRouter.post('/:id/assessment', requirePermission('alert:assess'), asyncHan
   const b = assessSchema.parse(req.body); const id = uuid.parse(req.params.id); const u = req.user!;
   // An AI draft can never be recorded with its clinician-only fields still empty.
   if (b.assessmentText.includes('[Clinician to complete') || b.responseText?.includes('[Clinician to complete')) throw new HttpError(422, 'Complete every bracketed field in the draft before recording it', 'draft_incomplete');
-  let aiNote: Record<string, unknown> = {};
+  let aiNote: Record<string, unknown> = {}; let aiDecision: { id: string; modified: boolean } | null = null;
   if (b.aiInteractionId) {
-    const ai = await pool.query(`SELECT 1 FROM ai_interactions WHERE id=$1 AND alert_id=$2 AND hospital_id=$3 AND kind='draft_assessment'`, [b.aiInteractionId, id, u.hospitalId]);
+    // The draft must be this clinician's own, for this alert and hospital, successfully generated, and not already rejected or recorded.
+    const ai = await pool.query(
+      `SELECT i.mode, i.model_id, i.output->>'draftText' AS draft_text, d.decision FROM ai_interactions i LEFT JOIN ai_draft_decisions d ON d.interaction_id=i.id
+       WHERE i.id=$1 AND i.alert_id=$2 AND i.hospital_id=$3 AND i.user_id=$4 AND i.kind='draft_assessment' AND i.status='completed'`, [b.aiInteractionId, id, u.hospitalId, u.id]);
     if (!ai.rowCount) throw new HttpError(400, 'Unknown AI draft for this alert', 'invalid_ai_reference');
-    aiNote = { aiAssisted: true, aiInteractionId: b.aiInteractionId };
+    if (ai.rows[0].decision) throw new HttpError(409, ai.rows[0].decision === 'rejected' ? 'This AI draft was rejected and cannot be recorded' : 'This AI draft has already been recorded', 'draft_already_decided');
+    const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
+    const modified = norm(b.assessmentText) !== norm(ai.rows[0].draft_text ?? '');
+    aiNote = { aiAssisted: true, aiInteractionId: b.aiInteractionId, aiMode: ai.rows[0].mode, aiModel: ai.rows[0].model_id, aiModified: modified };
+    aiDecision = { id: b.aiInteractionId, modified };
   }
   res.json(await transition(u, id, ['acknowledged', 'under_assessment'], 'under_assessment', 'assessment_recorded', { assessmentLength: b.assessmentText.length, ...aiNote }, async (c) => {
     await c.query('INSERT INTO clinical_assessments(alert_id,clinician_id,assessment_text) VALUES ($1,$2,$3)', [id, u.id, b.assessmentText]);
+    if (aiDecision) {
+      await c.query(`INSERT INTO ai_draft_decisions(interaction_id,user_id,decision,modified) VALUES ($1,$2,'recorded',$3)`, [aiDecision.id, u.id, aiDecision.modified]);
+      await audit({ hospitalId: u.hospitalId, userId: u.id, action: 'ai.draft_recorded', resourceType: 'alert', resourceId: id, metadata: { interactionId: aiDecision.id, modified: aiDecision.modified } }, c);
+    }
   }, async (c) => {
     if (b.responseText)
       await c.query(`INSERT INTO response_events(alert_id,user_id,event_type,previous_status,new_status,event_details) VALUES ($1,$2,'response_documented','under_assessment','under_assessment',$3)`, [id, u.id, JSON.stringify({ responseText: b.responseText })]);

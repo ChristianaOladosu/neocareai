@@ -51,6 +51,17 @@ export const demoProvider: AiProvider = {
         sources: sources(b), limitations: limits(b),
       };
     }
+    if (kind === 'documentation_help') {
+      const done = new Set((b.history ?? []).map((h) => h.eventType));
+      const items = [
+        `Acknowledgement: ${done.has('acknowledged') ? 'recorded' : 'not yet recorded'}.`,
+        `Clinical assessment: ${done.has('assessment_recorded') ? 'recorded' : 'not yet recorded'}.`,
+        `Response documented: ${done.has('response_documented') ? 'recorded' : 'not yet recorded'}.`,
+        poor ? 'Signal quality: some triggering readings are unreliable; is this noted?' : 'Signal quality: all triggering readings were good or unreported.',
+        'Who is responsible for the next step on this alert?',
+      ];
+      return { title: 'Documentation checklist (prepared from stored data)', sections: [{ heading: 'Documentation checklist', text: items.join('\n') }], sources: sources(b), limitations: limits(b) };
+    }
     const draft = [
       'DRAFT FOR CLINICIAN REVIEW. Prepared from stored system data. It is not a clinical finding.',
       '',

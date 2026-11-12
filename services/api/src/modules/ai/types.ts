@@ -1,6 +1,6 @@
 import type { Quality, MeasurementType } from '../../../../intelligence/src/index.js';
 
-export type AiKind = 'summary' | 'draft_assessment';
+export type AiKind = 'summary' | 'draft_assessment' | 'documentation_help';
 export const DEMO_LABEL = 'Demo Mode – Not Connected to Azure';
 export const PLACEHOLDER_TOKEN = '[Clinician to complete';
 
@@ -17,7 +17,10 @@ export interface Bundle {
 
 export interface AiOutput {
   title: string;
-  sections: Array<{ heading: string; text: string }>;
+  sections: Array<{ heading: string; text: string; statements?: Array<{ kind: 'fact' | 'uncertainty' | 'question'; text: string; refs: string[] }> }>;
+  /** Records cited by the statements, so every factual statement can be traced to stored data (real-model output only). */
+  sourceRecords?: Array<{ id: string; label: string }>;
+  missingInformation?: string[];
   draftText?: string;
   sources: Array<{ id: string; title: string; kind: 'system-data' | 'system-documentation' }>;
   limitations: string[];

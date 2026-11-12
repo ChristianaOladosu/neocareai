@@ -1,17 +1,18 @@
 import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 import { migrate } from './migrate.js';
+import { ensureDefaultRules } from '../modules/alerts/alert-engine.js';
 
 // SYNTHETIC DEMO DATA ONLY. Demo passwords are for local development; never reuse in a real deployment.
 export const DEMO_PASSWORD = 'DemoPass#2026';
 
 const PERMS = ['newborn:read', 'newborn:write', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'alert:assess',
-  'alert:escalate', 'alert:resolve', 'response:read', 'device:read', 'device:manage', 'user:manage', 'unit:manage', 'audit:read', 'ai:summarise', 'ai:draft'];
+  'alert:escalate', 'alert:resolve', 'response:read', 'device:read', 'device:manage', 'user:manage', 'unit:manage', 'audit:read', 'ai:summarise', 'ai:draft', 'ai:manage'];
 const ROLE_PERMS: Record<string, string[]> = {
   Doctor: ['newborn:read', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'alert:assess', 'alert:escalate', 'alert:resolve', 'response:read', 'device:read', 'ai:summarise', 'ai:draft'],
   Nurse: ['newborn:read', 'observation:read', 'observation:write', 'alert:read', 'alert:acknowledge', 'response:read', 'device:read', 'ai:summarise'],
   // Administrators deliberately get no observation/alert permissions (no unrestricted clinical access).
-  Administrator: ['newborn:read', 'newborn:write', 'device:read', 'device:manage', 'user:manage', 'unit:manage', 'audit:read'],
+  Administrator: ['newborn:read', 'newborn:write', 'device:read', 'device:manage', 'user:manage', 'unit:manage', 'audit:read', 'ai:manage'],
 };
 
 export async function seed(reset = false) {
@@ -61,6 +62,7 @@ export async function seed(reset = false) {
     await pool.query('INSERT INTO device_assignments(device_id,newborn_id) VALUES ($1,$2)', [d, n]);
   }
   await dev(hB, 'SIM-MON-B1', true);
+  await ensureDefaultRules(); // rules are data: a reset must restore them or no alert could ever fire
 }
 
 if (process.argv[1]?.endsWith('seed.ts')) {

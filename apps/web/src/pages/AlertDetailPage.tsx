@@ -15,7 +15,7 @@ type Action = 'assess' | 'escalate' | 'resolve' | null;
 export default function AlertDetailPage() {
   const { id = '' } = useParams(); const { can } = useAuth(); const qc = useQueryClient();
   const q = useQuery({ queryKey: ['alert', id], queryFn: () => api<AlertDetail>(`/alerts/${id}`), refetchInterval: 15_000 });
-  const [action, setAction] = useState<Action>(null); const [toast, setToast] = useState(''); const [draft, setDraft] = useState<{ text: string; id: string } | null>(null);
+  const [action, setAction] = useState<Action>(null); const [toast, setToast] = useState(''); const [draft, setDraft] = useState<{ text: string; id: string; mode: 'demo' | 'azure' } | null>(null);
   const refresh = (msg: string) => { ['alert', 'alerts', 'response-log', 'overview'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); setToast(msg); setTimeout(() => setToast(''), 3500); };
   const ack = useMutation({ mutationFn: () => post(`/alerts/${id}/acknowledge`), onSuccess: () => refresh('Alert acknowledged') });
   if (q.isLoading) return <Loading />;
@@ -46,7 +46,7 @@ export default function AlertDetailPage() {
       </div>
       {s === 'acknowledged' && can('alert:assess') === false && <p className="small muted">A doctor must record the clinical assessment before this alert can be resolved.</p>}
 
-      <AiPanel alertId={id} status={s} canSummarise={can('ai:summarise')} canDraft={can('ai:draft')} canAssess={canAssess} onUseDraft={(text, i) => { setDraft({ text, id: i }); setAction('assess'); }} />
+      <AiPanel alertId={id} status={s} canSummarise={can('ai:summarise')} canDraft={can('ai:draft')} canAssess={canAssess} onUseDraft={(text, i, mode) => { setDraft({ text, id: i, mode }); setAction('assess'); }} />
 
       <div className="cols">
         <div>
@@ -74,7 +74,7 @@ export default function AlertDetailPage() {
 
 const COPY = { assess: { title: 'Record clinical assessment', btn: 'Record assessment', done: 'Assessment recorded' }, escalate: { title: 'Escalate alert', btn: 'Escalate alert', done: 'Alert escalated' }, resolve: { title: 'Resolve alert', btn: 'Resolve alert', done: 'Alert resolved' } } as const;
 
-function ActionDialog({ action, id, draft, onClose, onDone }: { action: Exclude<Action, null>; id: string; draft: { text: string; id: string } | null; onClose: () => void; onDone: (m: string) => void }) {
+function ActionDialog({ action, id, draft, onClose, onDone }: { action: Exclude<Action, null>; id: string; draft: { text: string; id: string; mode: 'demo' | 'azure' } | null; onClose: () => void; onDone: (m: string) => void }) {
   const [text, setText] = useState(draft?.text ?? ''); const [resp, setResp] = useState('');
   const c = COPY[action];
   const m = useMutation({ mutationFn: () => post(`/alerts/${id}/${action === 'assess' ? 'assessment' : action}`, action === 'assess' ? { assessmentText: text.trim(), ...(resp.trim() && { responseText: resp.trim() }), ...(draft && { aiInteractionId: draft.id }) } : action === 'escalate' ? { reason: text.trim() } : { resolutionNote: text.trim() }), onSuccess: () => onDone(c.done) });
@@ -85,7 +85,7 @@ function ActionDialog({ action, id, draft, onClose, onDone }: { action: Exclude<
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); m.mutate(); }}>
         {action === 'resolve' && <p className="small" style={{ marginBottom: 10 }}>Resolving records that a clinician has reviewed and closed this alert. It is permanent history and cannot be edited.</p>}
         {action === 'escalate' && <p className="small" style={{ marginBottom: 10 }}>Escalation is recorded with your name and the time. The alert stays open until a clinician resolves it.</p>}
-        {draft && <div className="banner warn" role="note"><div><b>Started from an AI-prepared draft (Demo Mode – Not Connected to Azure).</b> It is not a clinical finding. Edit it, replace every bracketed field with your own words, and only then record it. It is attributed to you.</div></div>}
+        {draft && <div className="banner warn" role="note"><div><b>{draft.mode === 'azure' ? 'Started from an AI-generated draft (Azure OpenAI).' : 'Started from an AI-prepared draft (Demo Mode – Not Connected to Azure).'}</b> It is not a clinical finding. Edit it, replace every bracketed field with your own words, and only then record it. It is attributed to you.</div></div>}
         {incomplete && <p className="small" role="alert" style={{ color: '#8E2F27', marginBottom: 8 }}>Replace every [Clinician to complete …] field before you can record this.</p>}
         {m.error && <div className="banner err" role="alert">{errMsg(m.error)}</div>}
         <Field id="txt" label={label} hint="Minimum 3 characters. Entries are permanent and attributed to you."><textarea id="txt" value={text} onChange={(e) => setText(e.target.value)} required style={draft ? { minHeight: 280, fontFamily: 'var(--font-mono)', fontSize: 13 } : undefined} /></Field>

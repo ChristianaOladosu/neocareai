@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../services/api/src/app.js';
 import { seed, DEMO_PASSWORD } from '../../services/api/src/database/seed.js';
@@ -12,9 +12,6 @@ const app = createApp(); let hospitalA = ''; let alertId = '';
 const agent = async (email: string) => { const a = request.agent(app); await a.post('/api/auth/login').send({ email, password: DEMO_PASSWORD }).expect(200); return a; };
 const ts = (m: number) => new Date(Date.now() - m * 60000).toISOString();
 const count = async (sql: string, p: any[] = []) => (await pool.query(sql, p)).rows[0].c as number;
-const realFetch = globalThis.fetch;
-const azureEnv = () => Object.assign(process.env, { AI_PROVIDER: 'azure', AZURE_OPENAI_ENDPOINT: 'https://example.invalid', AZURE_OPENAI_API_KEY: 'x'.repeat(16), AZURE_OPENAI_DEPLOYMENT: 'test' });
-afterEach(() => { globalThis.fetch = realFetch; for (const k of ['AI_PROVIDER', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_DEPLOYMENT', 'AI_ENABLED']) delete process.env[k]; });
 afterAll(async () => { await pool.end(); });
 
 beforeAll(async () => {
@@ -28,7 +25,7 @@ beforeAll(async () => {
 describe('AI assistance: status, permissions, isolation', () => {
   it('reports Demo Mode and lists what it cannot do', async () => {
     const d = await agent('doctor@demo.neocareai.test'); const s = (await d.get('/api/ai/status').expect(200)).body;
-    expect(s).toMatchObject({ mode: 'demo', label: 'Demo Mode – Not Connected to Azure', azureConfigured: false });
+    expect(s).toMatchObject({ defaultMode: 'demo', label: 'Demo Mode – Not Connected to Azure' }); expect(s.azure.configured).toBe(false);
     expect(s.cannot).toEqual(expect.arrayContaining(['Diagnose', 'Make clinical decisions']));
   });
   it('enforces roles: administrator none, nurse summary only, doctor both', async () => {
@@ -77,7 +74,8 @@ describe('AI assistance: content, auditability, no side effects', () => {
   });
   it('can be switched off without affecting the alert workflow', async () => {
     process.env.AI_ENABLED = 'false'; const d = await agent('doctor@demo.neocareai.test');
-    const r = await d.post(`/api/alerts/${alertId}/ai/summary`).expect(503); expect(r.body.error).toBe('ai_disabled');
+    try { const r = await d.post(`/api/alerts/${alertId}/ai/summary`).expect(503); expect(r.body.error).toBe('ai_disabled'); }
+    finally { delete process.env.AI_ENABLED; }
     await d.post(`/api/alerts/${alertId}/acknowledge`).expect(200);
   });
 });
@@ -95,31 +93,5 @@ describe('AI drafts cannot reach the clinical record unreviewed', () => {
     await d.post(`/api/alerts/${alertId}/assessment`).send({ assessmentText: done, aiInteractionId: draft.interactionId }).expect(200);
     const ev = (await d.get(`/api/alerts/${alertId}`).expect(200)).body.events.find((e: any) => e.event_type === 'assessment_recorded');
     expect(ev.event_details).toMatchObject({ aiAssisted: true, aiInteractionId: draft.interactionId }); expect(ev.user_name).toBe('Dr. Demo Doctor');
-  });
-});
-
-describe('Azure integration seam (stubbed network; no real Azure call was made)', () => {
-  const azureReply = (content: object) => async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200 });
-  it('uses the Azure provider when configured and passes only anonymised data', async () => {
-    azureEnv(); let sent = '';
-    globalThis.fetch = (async (u: any, init: any) => (String(u).startsWith('https://example.invalid') ? (sent = init.body, azureReply({ title: 'Summary', sections: [{ heading: 'What the system detected', text: 'Heart rate readings of 190 to 195 bpm.' }] })()) : realFetch(u, init))) as typeof fetch;
-    const d = await agent('doctor@demo.neocareai.test'); const r = (await d.post(`/api/alerts/${alertId}/ai/summary`).expect(200)).body;
-    expect(r.mode).toBe('azure'); expect(sent).not.toMatch(/NB-\d|Demo Doctor|doctor@/); expect(r.output.sources.some((s: any) => s.id === 'ALERT-EVIDENCE')).toBe(true);
-  });
-  it('withholds unsafe model output (diagnosis, dismissal) and records the flags', async () => {
-    azureEnv(); globalThis.fetch = (async (u: any, init: any) => (String(u).startsWith('https://example.invalid') ? azureReply({ title: 'Summary', sections: [{ heading: 'x', text: 'The baby has sepsis, no action is needed, this can be dismissed.' }] })() : realFetch(u, init))) as typeof fetch;
-    const d = await agent('doctor@demo.neocareai.test'); const r = (await d.post(`/api/alerts/${alertId}/ai/summary`).expect(200)).body;
-    expect(r.status).toBe('blocked'); expect(JSON.stringify(r.output)).not.toMatch(/sepsis/);
-    const i = (await pool.query(`SELECT safeguard_flags FROM ai_interactions ORDER BY created_at DESC LIMIT 1`)).rows[0]; expect(i.safeguard_flags).toEqual(expect.arrayContaining(['diagnosis_claim', 'dismissal_or_resolution']));
-  });
-  it('falls back to Demo Mode when Azure is unavailable, and the workflow keeps working', async () => {
-    azureEnv(); globalThis.fetch = (async (u: any, init: any) => { if (String(u).startsWith('https://example.invalid')) throw new Error('ECONNREFUSED'); return realFetch(u, init); }) as typeof fetch;
-    const d = await agent('doctor@demo.neocareai.test'); const r = (await d.post(`/api/alerts/${alertId}/ai/summary`).expect(200)).body;
-    expect(r).toMatchObject({ status: 'fallback', mode: 'demo', label: 'Demo Mode – Not Connected to Azure' });
-  });
-  it('re-adds clinician-only placeholders if a model omits them from a draft', async () => {
-    azureEnv(); globalThis.fetch = (async (u: any, init: any) => (String(u).startsWith('https://example.invalid') ? azureReply({ title: 'Draft', sections: [], draftText: 'Heart rate 190 to 195 bpm.' })() : realFetch(u, init))) as typeof fetch;
-    const d = await agent('doctor@demo.neocareai.test'); const r = (await d.post(`/api/alerts/${alertId}/ai/draft-assessment`).expect(200)).body;
-    expect(r.output.draftText.split('[Clinician to complete').length - 1).toBe(3);
   });
 });

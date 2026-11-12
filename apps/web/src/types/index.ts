@@ -21,7 +21,13 @@ export interface Device { id: string; device_identifier: string; manufacturer: s
 export interface TeamUser { id: string; full_name: string; email: string; account_status: string; created_at: string; roles: string[] }
 export interface RoleInfo { name: string; permissions: string[] }
 export interface Rule { id: string; rule_key: string; name: string; description: string; rule_version: number; enabled: boolean; configuration: { priority: Priority; explanationTemplate: string; conditions: unknown[]; requiredMeasurements: string[]; requiredQuality: Quality[] } }
-export interface AiStatus { enabled: boolean; mode: 'demo' | 'azure'; label: string; provider: string; azureRequested: boolean; azureConfigured: boolean; capabilities: string[]; cannot: string[]; tools: Array<{ name: string; needs: string }> }
-export interface AiResult { interactionId: string; kind: 'summary' | 'draft_assessment'; mode: 'demo' | 'azure'; label: string; status: 'completed' | 'blocked' | 'fallback'; notice: string;
-  output: { title: string; sections: Array<{ heading: string; text: string }>; draftText?: string; sources: Array<{ id: string; title: string; kind: string }>; limitations: string[] } }
-export interface AiInteraction { id: string; kind: string; provider: string; mode: string; status: string; tool_calls: Array<{ tool: string; allowed: boolean }>; safeguard_flags: string[]; created_at: string; alert_id: string | null; user_name: string; newborn_identifier: string | null }
+export interface AiStatus { enabled: boolean; defaultMode: 'demo' | 'azure'; mode: 'demo' | 'azure'; label: string; provider: string;
+  azure: { configured: boolean; requested: boolean; deployment?: string; apiVersion?: string; auth?: string; configurationProblem?: string | null; lastConnectionTest: { ok: boolean; category: string | null; model: string | null; at: string } | null };
+  capabilities: string[]; cannot: string[]; tools: Array<{ name: string; needs: string }> }
+export interface AiStatement { kind: 'fact' | 'uncertainty' | 'question'; text: string; refs: string[] }
+export interface AiCheck { name: string; ok: boolean; detail?: string }
+export interface AiResult { interactionId: string; kind: 'summary' | 'draft_assessment' | 'documentation_help'; mode: 'demo' | 'azure'; generated: boolean; label: string; model: string; status: 'completed' | 'blocked'; notice: string;
+  validation: { passed: boolean; checks: AiCheck[]; flags: string[]; note: string };
+  output: { title: string; sections: Array<{ heading: string; text: string; statements?: AiStatement[] }>; draftText?: string; sourceRecords?: Array<{ id: string; label: string }>; missingInformation?: string[]; sources: Array<{ id: string; title: string; kind: string }>; limitations: string[] } }
+export interface AiInteraction { id: string; kind: string; provider: string; mode: string; status: string; tool_calls: Array<{ tool: string; allowed: boolean }>; safeguard_flags: string[]; created_at: string; alert_id: string | null; model_id: string | null; user_role: string | null; latency_ms: number | null; error_category: string | null; validation: { passed?: boolean }; decision: 'recorded' | 'rejected' | null; decision_modified: boolean | null; user_name: string; newborn_identifier: string | null }
+export interface AiConnectionTest { ok: boolean; category: string | null; model?: string | null; message: string; latencyMs?: number }
