@@ -5,12 +5,16 @@ import { env } from './config/env.js';
 import { createApp } from './app.js';
 import { migrate } from './database/migrate.js';
 import { ensureDefaultRules } from './modules/alerts/alert-engine.js';
+import { ensureRbac } from './database/rbac.js';
+import { runMonitors } from './modules/alerts/monitors.js';
 import { bus, type DomainEvent } from './events/bus.js';
 import { loadUser, COOKIE } from './middleware/auth.js';
 
 async function main() {
   await migrate();
-  await ensureDefaultRules();
+  await ensureRbac(); await ensureDefaultRules();
+  const every = Number(process.env.MONITOR_INTERVAL_MS) || 30_000;
+  setInterval(() => { runMonitors().catch((e) => console.error('monitor failed', e?.message)); }, every).unref();
   const server = createServer(createApp());
 
   // WebSocket: hospital-scoped realtime events. Authenticated via the same session cookie.

@@ -6,19 +6,21 @@ import { asyncHandler, HttpError } from '../../utils/errors.js';
 import { requireAuth, requirePermission, type AuthUser } from '../../middleware/auth.js';
 import { audit } from '../audit/audit.service.js';
 import { publish } from '../../events/bus.js';
+import { canAccessNewborn, scopeSql } from '../newborns/scope.js';
 
 export const alertsRouter = Router();
 alertsRouter.use(requireAuth);
 const uuid = z.string().uuid();
 
 alertsRouter.get('/', requirePermission('alert:read'), asyncHandler(async (req, res) => {
-  const q = z.object({ status: z.string().optional(), newbornId: uuid.optional(), limit: z.coerce.number().int().min(1).max(500).default(100) }).parse(req.query);
-  const statuses = q.status ? q.status.split(',') : null;
+  const q = z.object({ status: z.string().optional(), newbornId: uuid.optional(), priority: z.enum(['high', 'medium', 'low']).optional(),
+    category: z.enum(['measurement', 'trend', 'signal_quality', 'missing_data', 'device_disconnection']).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) }).parse(req.query);
+  const statuses = q.status ? q.status.split(',') : null; const p: unknown[] = [req.user!.hospitalId, statuses, q.newbornId ?? null, q.priority ?? null, q.category ?? null, q.limit]; const scope = scopeSql('a.newborn_id', p, req.user!);
   const r = await pool.query(
-    `SELECT a.id, a.newborn_id, n.newborn_identifier, a.priority, a.title, a.explanation, a.status, a.created_at, a.updated_at, a.evidence
+    `SELECT a.id, a.newborn_id, n.newborn_identifier, a.priority, a.category, a.title, a.explanation, a.status, a.created_at, a.updated_at, a.evidence, a.occurrence_count
      FROM clinical_alerts a JOIN newborns n ON n.id=a.newborn_id
-     WHERE a.hospital_id=$1 AND ($2::text[] IS NULL OR a.status = ANY($2)) AND ($3::uuid IS NULL OR a.newborn_id=$3)
-     ORDER BY a.created_at DESC LIMIT $4`, [req.user!.hospitalId, statuses, q.newbornId ?? null, q.limit]);
+     WHERE a.hospital_id=$1 AND ($2::text[] IS NULL OR a.status = ANY($2)) AND ($3::uuid IS NULL OR a.newborn_id=$3) AND ($4::text IS NULL OR a.priority=$4) AND ($5::text IS NULL OR a.category=$5) AND ${scope}
+     ORDER BY a.created_at DESC LIMIT $6`, p);
   res.json(r.rows);
 }));
 
@@ -28,7 +30,7 @@ alertsRouter.get('/:id', requirePermission('alert:read'), asyncHandler(async (re
   const a = await pool.query(
     `SELECT a.*, n.newborn_identifier, r.rule_version, r.name AS rule_name FROM clinical_alerts a JOIN newborns n ON n.id=a.newborn_id
      LEFT JOIN alert_rules r ON r.id=a.rule_id WHERE a.id=$1 AND a.hospital_id=$2`, [id, req.user!.hospitalId]);
-  if (!a.rows[0]) throw new HttpError(404, 'Alert not found', 'not_found');
+  if (!a.rows[0] || !(await canAccessNewborn(req.user!, a.rows[0].newborn_id))) throw new HttpError(404, 'Alert not found', 'not_found');
   const [events, assessments] = await Promise.all([
     pool.query(`SELECT e.id, e.event_type, e.previous_status, e.new_status, e.event_details, e.created_at, u.full_name AS user_name
                 FROM response_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.alert_id=$1 ORDER BY e.seq`, [id]),
@@ -37,12 +39,12 @@ alertsRouter.get('/:id', requirePermission('alert:read'), asyncHandler(async (re
   res.json({ ...a.rows[0], events: events.rows, assessments: assessments.rows });
 }));
 
-type Status = 'awaiting_acknowledgement' | 'acknowledged' | 'under_assessment' | 'escalated' | 'resolved';
+type Status = 'awaiting_acknowledgement' | 'acknowledged' | 'under_assessment' | 'escalated' | 'resolved' | 'closed';
 
 async function transition(user: AuthUser, alertId: string, from: Status[], to: Status, eventType: string, details: Record<string, unknown>, extra?: (c: pg.PoolClient) => Promise<void>, after?: (c: pg.PoolClient) => Promise<void>) {
   return tx(async (c) => {
-    const cur = await c.query('SELECT status FROM clinical_alerts WHERE id=$1 AND hospital_id=$2 FOR UPDATE', [alertId, user.hospitalId]);
-    if (!cur.rows[0]) throw new HttpError(404, 'Alert not found', 'not_found');
+    const cur = await c.query('SELECT status, newborn_id FROM clinical_alerts WHERE id=$1 AND hospital_id=$2 FOR UPDATE', [alertId, user.hospitalId]);
+    if (!cur.rows[0] || !(await canAccessNewborn(user, cur.rows[0].newborn_id))) throw new HttpError(404, 'Alert not found', 'not_found');
     const prev = cur.rows[0].status as Status;
     if (!from.includes(prev)) throw new HttpError(409, `Cannot ${eventType.replace('_', ' ')} an alert that is ${prev.replace(/_/g, ' ')}`, 'invalid_transition');
     if (extra) await extra(c);
@@ -103,12 +105,31 @@ alertsRouter.post('/:id/resolve', requirePermission('alert:resolve'), asyncHandl
   }));
 }));
 
+// A clinician closes a RESOLVED alert (archiving it). Closing is never automatic.
+alertsRouter.post('/:id/close', requirePermission('alert:close'), asyncHandler(async (req, res) => {
+  res.json(await transition(req.user!, uuid.parse(req.params.id), ['resolved'], 'closed', 'closed', {}));
+}));
+// Documenting an action taken, without making a clinical assessment (for example by a nurse). Status does not change.
+alertsRouter.post('/:id/response', requirePermission('alert:respond'), asyncHandler(async (req, res) => {
+  const id = uuid.parse(req.params.id); const u = req.user!; const { text } = z.object({ text: z.string().trim().min(3).max(4000) }).parse(req.body);
+  await tx(async (c) => {
+    const cur = await c.query('SELECT status, newborn_id FROM clinical_alerts WHERE id=$1 AND hospital_id=$2 FOR UPDATE', [id, u.hospitalId]);
+    if (!cur.rows[0] || !(await canAccessNewborn(u, cur.rows[0].newborn_id))) throw new HttpError(404, 'Alert not found', 'not_found');
+    const st = cur.rows[0].status as Status; if (!['acknowledged', 'under_assessment', 'escalated'].includes(st)) throw new HttpError(409, 'Acknowledge the alert before documenting a response.', 'invalid_transition');
+    await c.query(`INSERT INTO response_events(alert_id,user_id,event_type,previous_status,new_status,event_details) VALUES ($1,$2,'response_documented',$3,$3,$4)`, [id, u.id, st, JSON.stringify({ responseText: text })]);
+    await c.query('UPDATE clinical_alerts SET updated_at=now() WHERE id=$1', [id]);
+    await audit({ hospitalId: u.hospitalId, userId: u.id, action: 'alert.response_documented', resourceType: 'alert', resourceId: id }, c);
+    publish({ type: 'alert.updated', hospitalId: u.hospitalId, payload: { alertId: id, status: st } });
+  });
+  res.json({ ok: true });
+}));
+
 export const responseLogRouter = Router();
 responseLogRouter.get('/', requireAuth, requirePermission('response:read'), asyncHandler(async (req, res) => {
-  const limit = z.coerce.number().int().min(1).max(500).default(100).parse(req.query.limit);
+  const limit = z.coerce.number().int().min(1).max(500).default(100).parse(req.query.limit); const lp: unknown[] = [req.user!.hospitalId, limit];
   const r = await pool.query(
     `SELECT e.id, e.alert_id, e.event_type, e.previous_status, e.new_status, e.event_details, e.created_at, u.full_name AS user_name, n.newborn_identifier, a.title AS alert_title
      FROM response_events e JOIN clinical_alerts a ON a.id=e.alert_id JOIN newborns n ON n.id=a.newborn_id LEFT JOIN users u ON u.id=e.user_id
-     WHERE a.hospital_id=$1 ORDER BY e.seq DESC LIMIT $2`, [req.user!.hospitalId, limit]);
+     WHERE a.hospital_id=$1 AND ${scopeSql('a.newborn_id', lp, req.user!)} ORDER BY e.seq DESC LIMIT $2`, lp);
   res.json(r.rows);
 }));

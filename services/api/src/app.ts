@@ -12,6 +12,9 @@ import { alertsRouter, responseLogRouter } from './modules/alerts/alerts.routes.
 import { devicesRouter } from './modules/devices/devices.routes.js';
 import { hospitalRouter } from './modules/hospitals/hospitals.routes.js';
 import { aiRouter } from './modules/ai/ai.routes.js';
+import { accountRouter } from './modules/auth/account.routes.js';
+import { usersRouter } from './modules/users/users.routes.js';
+import { notificationsRouter } from './modules/notifications/notifications.routes.js';
 import { auditRouter } from './modules/audit/audit.routes.js';
 
 export function createApp() {
@@ -23,7 +26,10 @@ export function createApp() {
   app.use(cookieParser());
   app.use('/api', rateLimit({ windowMs: 60_000, limit: env.nodeEnv === 'test' ? 100000 : 600, standardHeaders: true, legacyHeaders: false }));
   app.get('/api/health', (_req, res) => res.json({ ok: true, synthetic: true }));
+  app.use('/api/auth', accountRouter);
   app.use('/api/auth', authRouter);
+  app.use('/api', usersRouter);
+  app.use('/api/notifications', notificationsRouter);
   app.use('/api/newborns', newbornsRouter);
   app.use('/api/newborns', observationsRouter);
   app.use('/api/monitoring', monitoringRouter);

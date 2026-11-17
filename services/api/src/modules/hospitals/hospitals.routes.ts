@@ -21,19 +21,6 @@ hospitalRouter.get('/units', asyncHandler(async (req, res) => {
   res.json(r.rows);
 }));
 
-hospitalRouter.get('/users', requirePermission('user:manage'), asyncHandler(async (req, res) => {
-  const r = await pool.query(
-    `SELECT u.id, u.full_name, u.email, u.account_status, u.created_at, COALESCE(array_agg(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
-     FROM users u LEFT JOIN user_roles ur ON ur.user_id=u.id LEFT JOIN roles r ON r.id=ur.role_id WHERE u.hospital_id=$1 GROUP BY u.id ORDER BY u.full_name`, [req.user!.hospitalId]);
-  res.json(r.rows);
-}));
-
-hospitalRouter.get('/roles', requirePermission('user:manage'), asyncHandler(async (_req, res) => {
-  const r = await pool.query(`SELECT r.name, COALESCE(array_agg(p.name ORDER BY p.name) FILTER (WHERE p.name IS NOT NULL), '{}') AS permissions
-    FROM roles r LEFT JOIN role_permissions rp ON rp.role_id=r.id LEFT JOIN permissions p ON p.id=rp.permission_id GROUP BY r.name ORDER BY r.name`);
-  res.json(r.rows);
-}));
-
 // Rules are displayed read-only: clinical rules must be reviewed and approved by qualified neonatal clinicians before any change.
 hospitalRouter.get('/alert-rules', asyncHandler(async (req, res) => {
   if (!req.user!.permissions.has('alert:read') && !req.user!.permissions.has('user:manage')) throw new HttpError(403, 'Insufficient permissions', 'forbidden');

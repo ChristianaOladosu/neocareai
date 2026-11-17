@@ -30,7 +30,7 @@ export async function ingest(ctx: IngestContext, o: ObservationInput) {
   return tx(async (c) => {
     const nb = await c.query('SELECT id, monitoring_status FROM newborns WHERE id=$1 AND hospital_id=$2 FOR SHARE', [ctx.newbornId, ctx.hospitalId]);
     if (!nb.rows[0]) throw new HttpError(404, 'Newborn not found', 'not_found');
-    if (nb.rows[0].monitoring_status === 'discharged') throw new HttpError(409, 'Newborn is discharged', 'not_monitored');
+    if (['discharged', 'inactive', 'transferred'].includes(nb.rows[0].monitoring_status)) throw new HttpError(409, `Newborn is ${nb.rows[0].monitoring_status}; measurements are not accepted`, 'not_monitored');
     if (ctx.deviceId) {
       const as = await c.query('SELECT 1 FROM device_assignments WHERE device_id=$1 AND newborn_id=$2 AND unassigned_at IS NULL', [ctx.deviceId, ctx.newbornId]);
       if (!as.rowCount) throw new HttpError(409, 'Device is not currently assigned to this newborn', 'association_mismatch');
