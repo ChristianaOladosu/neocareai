@@ -15,6 +15,10 @@ import { aiRouter } from './modules/ai/ai.routes.js';
 import { accountRouter } from './modules/auth/account.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
 import { notificationsRouter } from './modules/notifications/notifications.routes.js';
+import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
+import { intelligenceRouter } from './modules/monitoring/intelligence.routes.js';
+import { reportsRouter } from './modules/reports/reports.routes.js';
+import { settingsRouter } from './modules/hospitals/settings.routes.js';
 import { auditRouter } from './modules/audit/audit.routes.js';
 
 export function createApp() {
@@ -29,6 +33,8 @@ export function createApp() {
   app.use('/api/auth', accountRouter);
   app.use('/api/auth', authRouter);
   app.use('/api', usersRouter);
+  app.use('/api', dashboardRouter);
+  app.use('/api', intelligenceRouter);
   app.use('/api/notifications', notificationsRouter);
   app.use('/api/newborns', newbornsRouter);
   app.use('/api/newborns', observationsRouter);
@@ -39,6 +45,8 @@ export function createApp() {
   app.use('/api/response-log', responseLogRouter);
   app.use('/api/devices', devicesRouter);
   app.use('/api/audit', auditRouter);
+  app.use('/api/settings', settingsRouter);
+  app.use('/api/reports', reportsRouter);
   app.use('/api', hospitalRouter);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found', message: 'Unknown endpoint' }));
   app.use(errorMiddleware);

@@ -2,9 +2,9 @@ import { pool } from '../../database/db.js';
 import { createAlert } from './alert-engine.js';
 import { notify } from '../notifications/notify.js';
 import { STALE_AFTER_SECONDS } from '../observations/observations.service.js';
+import { settingValue } from '../hospitals/settings.routes.js';
 
 const NAME: Record<string, string> = { heart_rate: 'Heart rate', respiratory_rate: 'Respiratory rate', spo2: 'Oxygen saturation', temperature: 'Temperature' };
-const reminderMinutes = () => Number(process.env.REMINDER_MINUTES) || 5;
 
 /**
  * Periodic checks that need no incoming message: device disconnection, missing measurements, silent data loss, and unacknowledged-alert reminders.
@@ -39,11 +39,17 @@ export async function runMonitors() {
       }
     }
   }
-  // Reminders for alerts nobody has acknowledged yet (repeats every reminder interval, at most 6 times).
-  const un = await pool.query(`SELECT a.id, a.hospital_id, a.newborn_id, a.title, a.priority, n.newborn_identifier, extract(epoch FROM now()-a.created_at)/60 AS mins FROM clinical_alerts a JOIN newborns n ON n.id=a.newborn_id WHERE a.status='awaiting_acknowledgement' AND a.created_at < now() - ($1 || ' minutes')::interval`, [String(reminderMinutes())]);
-  for (const a of un.rows) {
-    const k = Math.min(6, Math.floor(a.mins / reminderMinutes()));
-    r.reminders += await notify(a.hospital_id, { type: 'unacknowledged_reminder', priority: a.priority, title: `Still unacknowledged: ${a.newborn_identifier}`, body: `${a.title} has waited about ${Math.round(a.mins)} minutes.`, link: `/alerts/${a.id}`, alertId: a.id, newbornId: a.newborn_id, dedupeKey: `alert:${a.id}:reminder:${k}` });
+  // Reminders for alerts nobody has acknowledged yet (repeats every reminder interval, at most 6 times). The interval is a per-hospital setting.
+  for (const h of (await pool.query(`SELECT id FROM hospitals WHERE status='active'`)).rows) {
+    const mins = Number(process.env.REMINDER_MINUTES) || await settingValue(h.id, 'reminder_minutes');
+    const un = await pool.query(`SELECT a.id, a.hospital_id, a.newborn_id, a.title, a.priority, n.newborn_identifier, extract(epoch FROM now()-a.created_at)/60 AS mins FROM clinical_alerts a JOIN newborns n ON n.id=a.newborn_id WHERE a.hospital_id=$1 AND a.status='awaiting_acknowledgement' AND a.created_at < now() - ($2 || ' minutes')::interval`, [h.id, String(mins)]);
+    for (const a of un.rows) {
+      const k = Math.min(6, Math.floor(a.mins / mins));
+      r.reminders += await notify(a.hospital_id, { type: 'unacknowledged_reminder', priority: a.priority, title: `Still unacknowledged: ${a.newborn_identifier}`, body: `${a.title} has waited about ${Math.round(a.mins)} minutes.`, link: `/alerts/${a.id}`, alertId: a.id, newbornId: a.newborn_id, dedupeKey: `alert:${a.id}:reminder:${k}` });
+    }
+    // Retention applies to operational data only (notifications, report history, development outbox). Clinical records and audit history are never purged here.
+    await pool.query(`DELETE FROM notifications WHERE hospital_id=$1 AND created_at < now() - ($2 || ' days')::interval`, [h.id, String(await settingValue(h.id, 'notification_retention_days'))]);
+    await pool.query(`DELETE FROM reports WHERE hospital_id=$1 AND created_at < now() - ($2 || ' days')::interval`, [h.id, String(await settingValue(h.id, 'report_history_retention_days'))]);
   }
   return r;
 }
