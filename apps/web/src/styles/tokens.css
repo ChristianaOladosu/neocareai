@@ -1,0 +1,63 @@
+/* ============ NEOCAREAI DESIGN TOKENS: Midnight Elegance ============ */
+:root {
+  /* Brand palette (decorative and structural; never used alone to mean clinical status) */
+  --midnight: #17182F; --plum: #49416D; --lavender: #C5B9E8; --gold: #D8B878; --porcelain: #F8F6F2;
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, serif; --font-ui: 'Inter', system-ui, sans-serif; --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --fs-xs: 12px; --fs-sm: 13px; --fs-base: 14.5px; --fs-md: 16px; --fs-lg: 18px; --fs-xl: 22px; --fs-2xl: 28px; --fs-3xl: 38px; --fs-hero: clamp(40px, 6vw, 76px);
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700;
+  /* Spacing (4px base) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 72px; --sp-9: 112px;
+  /* Radii */
+  --r-sm: 6px; --r-md: 10px; --r-lg: 16px; --r-xl: 24px; --r-pill: 999px;
+  /* Z-index scale */
+  --z-base: 1; --z-sticky: 20; --z-sidebar: 40; --z-popover: 60; --z-drawer: 70; --z-modal: 80; --z-toast: 90;
+  /* Motion */
+  --ease: cubic-bezier(.22, .8, .24, 1); --dur-fast: 140ms; --dur: 260ms; --dur-slow: 560ms;
+  /* Breakpoints (reference; CSS media queries use these values): sm 560, md 880, lg 1120, xl 1360 */
+  --side-w: 264px;
+}
+/* ----- Light theme ----- */
+:root, [data-theme='light'] {
+  color-scheme: light;
+  --bg: var(--porcelain); --surface: #FFFFFF; --surface-2: #F0ECF8; --surface-3: #E7E1F4;
+  --text: var(--midnight); --text-muted: #5A5774; --border: #DDD8E8; --border-strong: #BDB5D4;
+  --accent: var(--plum); --accent-hover: #3A3358; --accent-contrast: #FFFFFF; --accent-soft: #E9E4F6; --highlight: #8E7418; --on-highlight: #FFFFFF;
+  --focus: #6B58C4; --link: #4A3FA0; --shadow-color: 23 24 47;
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-color) / .06), 0 1px 1px rgb(var(--shadow-color) / .04);
+  --shadow-md: 0 6px 18px rgb(var(--shadow-color) / .09), 0 2px 4px rgb(var(--shadow-color) / .05);
+  --shadow-lg: 0 18px 48px rgb(var(--shadow-color) / .16), 0 4px 10px rgb(var(--shadow-color) / .06);
+  --glass: rgb(255 255 255 / .72); --chart-line: #49416D; --chart-grid: #E4DFEE; --chart-axis: #6A6785;
+  /* Clinical semantic colours. Deliberately NOT the brand lavender/plum/gold. Always paired with a label and an icon. */
+  --c-high: #B3261E; --c-high-bg: #FCE8E6; --c-high-border: #E7A8A2;
+  --c-medium: #8F4A00; --c-medium-bg: #FFF0DC; --c-medium-border: #E8BE86;
+  --c-low: #1F5F7A; --c-low-bg: #E1F1F7; --c-low-border: #9CCBDD;
+  --c-normal: #1B6B47; --c-normal-bg: #E1F3EA; --c-normal-border: #9BD0B3;
+  --c-concerning: #8F4A00; --c-concerning-bg: #FFF0DC;
+  --c-poor: #3F5F86; --c-poor-bg: #E4ECF6;            /* poor signal: steel blue, hatched */
+  --c-missing: #5C6370; --c-missing-bg: #ECEDF0;      /* missing signal: grey, dotted */
+  --c-disconnected: #333B48; --c-disconnected-bg: #E3E5EA;  /* disconnected device: charcoal, dashed */
+  --c-error: #B3261E; --c-error-bg: #FCE8E6; --c-success: #1B6B47; --c-success-bg: #E1F3EA;
+}
+/* ----- Dark theme ----- */
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #12132A; --surface: #1D1E3A; --surface-2: #27284A; --surface-3: #323358;
+  --text: #F3F1F9; --text-muted: #B6B3CE; --border: #36375C; --border-strong: #55567F;
+  --accent: var(--lavender); --accent-hover: #D8CFF2; --accent-contrast: #17182F; --accent-soft: #2E2F55; --highlight: var(--gold); --on-highlight: #17182F;
+  --focus: #D8CFF2; --link: #D1C7F0; --shadow-color: 0 0 0;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / .35); --shadow-md: 0 8px 22px rgb(0 0 0 / .38); --shadow-lg: 0 22px 56px rgb(0 0 0 / .5);
+  --glass: rgb(32 33 61 / .72); --chart-line: #C5B9E8; --chart-grid: #34355A; --chart-axis: #A9A6C4;
+  --c-high: #FF9A92; --c-high-bg: #4A2127; --c-high-border: #8E4A52;
+  --c-medium: #FFBE6B; --c-medium-bg: #46301A; --c-medium-border: #85602F;
+  --c-low: #86CCE6; --c-low-bg: #17313D; --c-low-border: #3F7388;
+  --c-normal: #82D6A8; --c-normal-bg: #18362A; --c-normal-border: #3F7B5F;
+  --c-concerning: #FFBE6B; --c-concerning-bg: #46301A;
+  --c-poor: #9DBDE8; --c-poor-bg: #22324A; --c-missing: #B7BCC8; --c-missing-bg: #2B2E3B; --c-disconnected: #D4D8E2; --c-disconnected-bg: #353A48;
+  --c-error: #FF9A92; --c-error-bg: #4A2127; --c-success: #82D6A8; --c-success-bg: #18362A;
+}
+/* Legacy aliases so existing screens adopt the new system */
+:root {
+  --navy: var(--midnight); --teal: var(--accent); --ivory: var(--bg); --mist: var(--surface-2); --sand: var(--surface-3); --coral: var(--c-high); --amber: var(--c-medium); --green: var(--c-normal); --slate: var(--text-muted);
+  --ink: var(--text); --rule: var(--border); --paper: var(--surface); --coral-bg: var(--c-high-bg); --amber-bg: var(--c-medium-bg); --teal-bg: var(--accent-soft); --font-head: var(--font-display); --font-body: var(--font-ui);
+}

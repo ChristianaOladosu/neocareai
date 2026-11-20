@@ -47,3 +47,5 @@ export function Field({ label, error, hint, children, id }: { label: string; err
 }
 export const issueMap = (e: unknown): Record<string, string> => e instanceof ApiError && e.issues ? Object.fromEntries(e.issues.map((i) => [i.path, i.message])) : {};
 export const errMsg = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
+
+export const Spinner = () => <span aria-hidden="true" style={{ width: 15, height: 15, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin .7s linear infinite' }} />;

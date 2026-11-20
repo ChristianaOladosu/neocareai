@@ -22,6 +22,14 @@ export const dt = (iso: string) => new Date(iso).toLocaleString([], { day: '2-di
 export const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export const QUALITY_LABEL: Record<Quality, string> = { good: 'Good signal', questionable: 'Questionable signal', poor: 'Poor signal', unavailable: 'No signal', unknown: 'Quality unknown' };
-export const STATUS_LABEL: Record<AlertStatus, string> = { awaiting_acknowledgement: 'Awaiting acknowledgement', acknowledged: 'Acknowledged', under_assessment: 'Under assessment', escalated: 'Escalated', resolved: 'Resolved' };
+export const STATUS_LABEL: Record<AlertStatus, string> = { awaiting_acknowledgement: 'Open (awaiting acknowledgement)', acknowledged: 'Acknowledged', under_assessment: 'Under assessment', escalated: 'Escalated', resolved: 'Resolved', closed: 'Closed' };
 export const PRIORITY_LABEL: Record<Priority, string> = { high: 'High priority', medium: 'Medium priority', low: 'Low priority' };
-export const EVENT_LABEL: Record<string, string> = { generated: 'Alert generated', acknowledged: 'Acknowledged', assessment_recorded: 'Assessment recorded', response_documented: 'Response documented', escalated: 'Escalated', resolved: 'Resolved' };
+export const EVENT_LABEL: Record<string, string> = { generated: 'Alert generated', acknowledged: 'Acknowledged', assessment_recorded: 'Assessment recorded', response_documented: 'Response documented', escalated: 'Escalated', resolved: 'Resolved', closed: 'Closed' };
+
+export const ROLE_LABEL: Record<string, string> = { Doctor: 'Neonatologist / Paediatrician', 'Medical Officer': 'Medical officer', Nurse: 'Nurse', 'Clinical Supervisor': 'Clinical supervisor', Administrator: 'Administrator' };
+export const roleLabel = (r: string) => ROLE_LABEL[r] ?? r;
+export const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]?.toUpperCase()).join('');
+export const SIGNAL_LABEL: Record<string, string> = { reliable: 'Reliable', reduced_quality: 'Reduced quality', poor_quality: 'Poor quality', missing_data: 'Missing data', device_disconnected: 'Device disconnected', insufficient_information: 'Insufficient information' };
+export const STATE_LABEL: Record<string, string> = { normal: 'Normal monitoring', concerning: 'Concerning trend', insufficient_signal: 'Insufficient signal', disconnected: 'Device disconnected', not_monitored: 'Not monitored' };
+export const CATEGORY_LABEL: Record<string, string> = { measurement: 'Measurement', trend: 'Trend', signal_quality: 'Signal quality', missing_data: 'Missing data', device_disconnection: 'Device disconnection' };
+export const ALERT_STATUS_LABEL: Record<string, string> = { awaiting_acknowledgement: 'Open', acknowledged: 'Acknowledged', under_assessment: 'Under assessment', escalated: 'Escalated', resolved: 'Resolved', closed: 'Closed' };

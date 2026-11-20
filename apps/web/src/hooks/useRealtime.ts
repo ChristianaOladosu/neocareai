@@ -17,9 +17,11 @@ export function useRealtime(enabled: boolean): LiveState {
       ws.onopen = () => { setState('live'); retry = 1000; };
       ws.onmessage = (m) => {
         const e = JSON.parse(m.data) as { type: string };
-        if (e.type === 'observation.stored') queue('overview', 'observations');
-        else if (e.type.startsWith('alert.')) queue('alerts', 'alert', 'response-log', 'overview');
-        else if (e.type === 'device.connection') queue('devices', 'overview');
+        if (e.type === 'observation.stored') queue('overview', 'observations', 'dashboard', 'intelligence');
+        else if (e.type.startsWith('alert.')) queue('alerts', 'alert', 'response-log', 'overview', 'dashboard', 'notifications', 'activity');
+        else if (e.type === 'device.connection') queue('devices', 'overview', 'dashboard', 'activity');
+        else if (e.type === 'notification.created') queue('notifications');
+        else if (e.type === 'newborn.lifecycle') queue('newborns', 'newborn', 'overview', 'dashboard', 'activity');
       };
       ws.onclose = () => { setState('offline'); if (!closed) setTimeout(connect, (retry = Math.min(retry * 2, 15000))); };
     };
