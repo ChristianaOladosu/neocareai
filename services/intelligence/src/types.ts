@@ -2,7 +2,7 @@ export type MeasurementType = 'heart_rate' | 'respiratory_rate' | 'spo2' | 'temp
 export type AlertCategory = 'measurement' | 'trend' | 'signal_quality' | 'missing_data' | 'device_disconnection';
 export type Quality = 'good' | 'questionable' | 'poor' | 'unavailable' | 'unknown';
 
-export interface Reading { id: string; measurementType: MeasurementType; value: number; unit: string; observedAt: Date; quality: Quality; }
+export interface Reading { id: string; deviceId?: string | null; measurementType: MeasurementType; value: number; unit: string; observedAt: Date; quality: Quality; }
 
 export type Condition =
   | { kind: 'consecutive_threshold'; measurement: MeasurementType; op: 'gt' | 'lt'; value: number; count: number; maxSpanMinutes: number }

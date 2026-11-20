@@ -20,9 +20,9 @@ async function loadRules(c: pg.PoolClient): Promise<Array<{ id: string; cfg: Rul
 async function recentReadings(c: pg.PoolClient, newbornId: string): Promise<Record<MeasurementType, Reading[]>> {
   const out = { heart_rate: [], respiratory_rate: [], spo2: [], temperature: [] } as Record<MeasurementType, Reading[]>;
   const r = await c.query(
-    `SELECT * FROM (SELECT id, measurement_type, value, unit, observed_at, quality_status, row_number() OVER (PARTITION BY measurement_type ORDER BY observed_at DESC) rn
+    `SELECT * FROM (SELECT id, device_id, measurement_type, value, unit, observed_at, quality_status, row_number() OVER (PARTITION BY measurement_type ORDER BY observed_at DESC) rn
        FROM observations WHERE newborn_id=$1) t WHERE rn <= 20 ORDER BY observed_at ASC`, [newbornId]);
-  for (const x of r.rows) out[x.measurement_type as MeasurementType].push({ id: x.id, measurementType: x.measurement_type, value: x.value, unit: x.unit, observedAt: x.observed_at, quality: x.quality_status });
+  for (const x of r.rows) out[x.measurement_type as MeasurementType].push({ id: x.id, deviceId: x.device_id, measurementType: x.measurement_type, value: x.value, unit: x.unit, observedAt: x.observed_at, quality: x.quality_status });
   return out;
 }
 
@@ -35,7 +35,11 @@ export async function evaluateNewborn(c: pg.PoolClient, hospitalId: string, newb
     // Duplicate handling: one open alert per newborn+rule; further occurrences are counted, not re-raised.
     const open = await c.query(`UPDATE clinical_alerts SET occurrence_count=occurrence_count+1, last_occurrence_at=now() WHERE newborn_id=$1 AND rule_id=$2 AND status NOT IN ('resolved','closed') RETURNING id`, [newbornId, rule.id]);
     if (open.rowCount) continue;
-    created.push(await createAlert(c, hospitalId, newbornId, { ruleId: rule.id, category: f.category, priority: f.priority, title: f.title, explanation: f.explanation, evidence: { ...f.evidence, ruleKey: f.ruleKey, ruleVersion: f.ruleVersion } }));
+    const triggeringDevices = f.evidence.triggering.map((reading) => reading.deviceId);
+    const deviceId = triggeringDevices.length > 0 && triggeringDevices.every((id) => id && id === triggeringDevices[0])
+      ? triggeringDevices[0]
+      : null;
+    created.push(await createAlert(c, hospitalId, newbornId, { ruleId: rule.id, category: f.category, priority: f.priority, title: f.title, explanation: f.explanation, evidence: { ...f.evidence, ruleKey: f.ruleKey, ruleVersion: f.ruleVersion }, deviceId }));
   }
   await recordAssessment(c, newbornId, findings, readings);
   return created;

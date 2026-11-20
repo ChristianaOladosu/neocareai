@@ -31,9 +31,11 @@ authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
-authRouter.post('/logout', requireAuth, asyncHandler(async (req, res) => {
-  res.clearCookie(COOKIE, { path: '/' });
-  await audit({ hospitalId: req.user!.hospitalId, userId: req.user!.id, action: 'auth.logout', resourceType: 'user', resourceId: req.user!.id });
+authRouter.post('/logout', asyncHandler(async (req, res) => {
+  res.clearCookie(COOKIE, { ...cookieOpts, maxAge: 0 });
+  if (req.user) {
+    await audit({ hospitalId: req.user.hospitalId, userId: req.user.id, action: 'auth.logout', resourceType: 'user', resourceId: req.user.id });
+  }
   res.json({ ok: true });
 }));
 

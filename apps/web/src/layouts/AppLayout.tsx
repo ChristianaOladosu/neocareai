@@ -78,7 +78,7 @@ export default function AppLayout() {
             {menu && <div className="pop" style={{ width: 280 }} role="menu"><div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}><b>{me?.fullName}</b><div className="small muted">{me?.email}</div><div className="small muted">{me ? roleLabel(me.roles[0] ?? '') : ''} · {hospital.data?.name}</div></div>
               <Link role="menuitem" to="/settings" style={{ display: 'flex', gap: 10, padding: '11px 16px', color: 'inherit' }}><Settings size={17} />Settings</Link>
               <button role="menuitem" onClick={toggle} style={{ display: 'flex', gap: 10, padding: '11px 16px', width: '100%', background: 'none', border: 0, color: 'inherit', font: 'inherit', cursor: 'pointer' }}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
-              <button role="menuitem" onClick={async () => { await logout(); nav('/login'); }} style={{ display: 'flex', gap: 10, padding: '11px 16px', width: '100%', background: 'none', border: 0, borderTop: '1px solid var(--border)', color: 'var(--c-error)', font: 'inherit', cursor: 'pointer' }}><LogOut size={17} />Sign out</button></div>}</div>
+              <button role="menuitem" onClick={async () => { try { await logout(); } finally { nav('/login', { replace: true }); } }} style={{ display: 'flex', gap: 10, padding: '11px 16px', width: '100%', background: 'none', border: 0, borderTop: '1px solid var(--border)', color: 'var(--c-error)', font: 'inherit', cursor: 'pointer' }}><LogOut size={17} />Sign out</button></div>}</div>
         </header>
         <main id="main" className="content" tabIndex={-1}><div className="page-body" key={loc.pathname}><Outlet /></div></main>
       </div>

@@ -30,7 +30,7 @@ export default function LandingPage() {
         <button className="iconbtn l-burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
         <nav className={`l-links ${open ? 'open' : ''}`} aria-label="Main">
           <a href="#platform" onClick={go}>Platform</a><a href="#capabilities" onClick={go}>Capabilities</a><a href="#how" onClick={go}>How it works</a><a href="#about" onClick={go}>About</a>
-          {me ? <Link className="btn gold" to="/overview">Open workspace</Link> : <><Link to="/login" onClick={go}>Login</Link>{reg && <Link className="btn gold" to="/login?mode=register">Get started</Link>}</>}
+          {me ? <Link className="btn gold" to="/overview">Open workspace</Link> : <><Link className="btn ghost" to="/login" onClick={go}>Login</Link>{reg && <Link className="btn gold" to="/login?mode=register">Get started</Link>}</>}
         </nav></div></header>
 
       <section className="l-hero" id="top"><div className="l-glow" style={{ width: 420, height: 420, right: '8%', top: '12%', background: 'rgb(197 185 232 / .28)' }} data-parallax="0.12" /><div className="l-glow" style={{ width: 320, height: 320, left: '-6%', bottom: '4%', background: 'rgb(216 184 120 / .16)', animationDelay: '-3s' }} data-parallax="0.2" />
