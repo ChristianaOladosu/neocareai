@@ -13,8 +13,8 @@ export function useRealtime(enabled: boolean): LiveState {
     const flush = () => { timer.current = undefined; pending.forEach((k) => qc.invalidateQueries({ queryKey: [k] })); pending = new Set(); };
     const queue = (...keys: string[]) => { keys.forEach((k) => pending.add(k)); if (!timer.current) timer.current = window.setTimeout(flush, 800); };
     const connect = () => {
-      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-      ws.onopen = () => { setState('live'); retry = 1000; };
+      const wsUrl = import.meta.env.VITE_WS_URL || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+ws = new WebSocket(wsUrl);      ws.onopen = () => { setState('live'); retry = 1000; };
       ws.onmessage = (m) => {
         const e = JSON.parse(m.data) as { type: string };
         if (e.type === 'observation.stored') queue('overview', 'observations', 'dashboard', 'intelligence');
